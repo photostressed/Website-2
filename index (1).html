@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Photostressed — Fotógrafo & Videógrafo</title>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,200;0,300;0,400;1,200;1,300&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0E0E0D;
+  --fg:#F0EBE1;
+  --muted:rgba(240,235,225,0.38);
+  --border:rgba(240,235,225,0.08);
+  --gold:#C9A96E;
+  --gold-muted:rgba(201,169,110,0.06);
+}
+html{scroll-behavior:smooth}
+body{font-family:'Poppins',sans-serif;background:var(--bg);color:var(--fg);font-weight:300;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+
+nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;justify-content:space-between;align-items:center;padding:1.6rem 3rem;border-bottom:0.5px solid transparent;transition:border-color 0.3s,background 0.3s}
+nav.scrolled{border-color:var(--border);background:rgba(14,14,13,0.94);backdrop-filter:blur(12px)}
+.nav-logo{font-size:1rem;font-weight:300;letter-spacing:0.1em;color:var(--fg)}
+.nav-logo span{color:var(--gold)}
+.nav-links{display:flex;gap:2.5rem}
+.nav-links a{font-size:0.65rem;letter-spacing:0.16em;text-transform:uppercase;color:var(--muted);text-decoration:none;transition:color 0.2s}
+.nav-links a:hover{color:var(--fg)}
+.nav-cta{font-size:0.65rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--gold);text-decoration:none;border-bottom:0.5px solid var(--gold);padding-bottom:1px;transition:opacity 0.2s}
+.nav-cta:hover{opacity:0.65}
+
+.hero{min-height:100vh;display:flex;flex-direction:column;justify-content:flex-end;padding:0 3rem 5rem;position:relative;overflow:hidden}
+.hero-line{position:absolute;top:0;right:11rem;width:0.5px;height:100%;background:var(--border)}
+.hero-tag{font-size:0.62rem;letter-spacing:0.22em;text-transform:uppercase;color:var(--gold);margin-bottom:2rem;opacity:0;animation:up 0.8s 0.2s forwards}
+.hero-title{font-size:clamp(3.2rem,6.5vw,6.5rem);line-height:0.97;font-weight:200;margin-bottom:2.5rem;opacity:0;animation:up 0.8s 0.35s forwards;letter-spacing:-0.01em}
+.hero-title em{font-style:italic;color:var(--gold);font-weight:200}
+.hero-sub{font-size:0.82rem;line-height:1.9;color:var(--muted);max-width:380px;margin-bottom:3rem;opacity:0;animation:up 0.8s 0.5s forwards;font-weight:300}
+.hero-actions{display:flex;align-items:center;gap:2.5rem;opacity:0;animation:up 0.8s 0.65s forwards}
+.btn-primary{background:var(--fg);color:var(--bg);border:none;padding:0.85rem 2.2rem;font-family:'Poppins',sans-serif;font-size:0.65rem;letter-spacing:0.16em;text-transform:uppercase;font-weight:400;cursor:pointer;transition:opacity 0.2s}
+.btn-primary:hover{opacity:0.82}
+.btn-ghost{font-size:0.65rem;letter-spacing:0.16em;text-transform:uppercase;color:var(--muted);background:none;border:none;cursor:pointer;transition:color 0.2s;font-family:'Poppins',sans-serif}
+.btn-ghost:hover{color:var(--fg)}
+.hero-scroll{position:absolute;bottom:2.5rem;right:3rem;font-size:0.58rem;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted);writing-mode:vertical-rl;opacity:0;animation:up 0.8s 0.9s forwards}
+
+section{padding:7rem 3rem;border-top:0.5px solid var(--border)}
+.s-label{font-size:0.58rem;letter-spacing:0.22em;text-transform:uppercase;color:var(--gold);margin-bottom:1rem}
+.s-title{font-size:clamp(1.8rem,3vw,2.6rem);font-weight:200;line-height:1.1;margin-bottom:3.5rem;letter-spacing:-0.01em}
+.s-title em{font-style:italic;color:var(--gold)}
+
+.services-grid{display:grid;grid-template-columns:repeat(3,1fr);border:0.5px solid var(--border)}
+.svc{padding:2.2rem 1.8rem;border-right:0.5px solid var(--border);transition:background 0.3s}
+.svc:last-child{border-right:none}
+.svc:hover{background:var(--gold-muted)}
+.svc-num{font-size:0.56rem;letter-spacing:0.18em;color:var(--gold);margin-bottom:1.5rem}
+.svc-name{font-size:1.05rem;font-weight:300;line-height:1.25;margin-bottom:0.9rem;color:var(--fg);letter-spacing:0.01em}
+.svc-desc{font-size:0.74rem;line-height:1.8;color:var(--muted);font-weight:300}
+
+.work-filter{display:flex;gap:2rem;margin-bottom:3rem}
+.filter-btn{background:none;border:none;font-family:'Poppins',sans-serif;font-size:0.62rem;letter-spacing:0.16em;text-transform:uppercase;color:var(--muted);cursor:pointer;padding-bottom:4px;border-bottom:0.5px solid transparent;transition:color 0.2s,border-color 0.2s}
+.filter-btn.active,.filter-btn:hover{color:var(--fg);border-color:var(--fg)}
+.work-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:3px}
+.work-item{position:relative;overflow:hidden;cursor:pointer;aspect-ratio:4/3}
+.work-item.wide{grid-column:span 2}
+.work-img{width:100%;height:100%;object-fit:cover;display:block;transition:transform 0.6s ease;filter:brightness(0.7)}
+.work-item:hover .work-img{transform:scale(1.04)}
+.work-overlay{position:absolute;inset:0;background:rgba(14,14,13,0.5);opacity:0;transition:opacity 0.3s;display:flex;flex-direction:column;justify-content:flex-end;padding:1.5rem}
+.work-item:hover .work-overlay{opacity:1}
+.work-play{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:44px;height:44px;border:0.5px solid rgba(240,235,225,0.45);border-radius:50%;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity 0.3s}
+.work-item.video:hover .work-play{opacity:1}
+.work-cat{font-size:0.56rem;letter-spacing:0.16em;text-transform:uppercase;color:var(--gold);margin-bottom:0.3rem}
+.work-name{font-size:0.9rem;font-weight:300;color:var(--fg)}
+
+.form-section{display:grid;grid-template-columns:1fr 1.2fr;gap:6rem;align-items:start}
+.form-intro-title{font-size:clamp(1.8rem,3vw,2.6rem);font-weight:200;line-height:1.05;margin-bottom:1.5rem;letter-spacing:-0.01em}
+.form-intro-title em{font-style:italic;color:var(--gold)}
+.form-intro-text{font-size:0.78rem;line-height:1.9;color:var(--muted);margin-bottom:2.5rem;font-weight:300}
+.form-steps{display:flex;flex-direction:column;gap:1.5rem}
+.fstep{display:flex;gap:1.2rem;align-items:flex-start}
+.fstep-num{font-size:1.1rem;color:var(--gold);line-height:1;min-width:20px;font-weight:200}
+.fstep-title{font-size:0.74rem;font-weight:400;color:var(--fg);margin-bottom:0.2rem;letter-spacing:0.02em}
+.fstep-desc{font-size:0.68rem;color:var(--muted);line-height:1.65;font-weight:300}
+.field{margin-bottom:0}
+.field label{display:block;font-size:0.56rem;letter-spacing:0.16em;text-transform:uppercase;color:var(--muted);margin-bottom:0.45rem}
+.field input,.field select,.field textarea{width:100%;background:transparent;border:none;border-bottom:0.5px solid var(--border);color:var(--fg);padding:0.6rem 0;font-family:'Poppins',sans-serif;font-size:0.8rem;font-weight:300;outline:none;transition:border-color 0.2s;-webkit-appearance:none}
+.field input::placeholder,.field textarea::placeholder{color:rgba(240,235,225,0.15)}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:rgba(201,169,110,0.5)}
+.field select{cursor:pointer;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 5 5-5' stroke='%23C9A96E' stroke-width='1' fill='none'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 0 center}
+.field select option{background:#1a1a18;color:var(--fg)}
+.field textarea{resize:none;height:90px;padding-top:0.6rem}
+.frow{display:grid;grid-template-columns:1fr 1fr;gap:1.2rem;margin-bottom:1.2rem}
+.frow.full{grid-template-columns:1fr}
+.form-submit{width:100%;background:var(--gold);color:var(--bg);border:none;padding:1rem;font-family:'Poppins',sans-serif;font-size:0.64rem;letter-spacing:0.18em;text-transform:uppercase;font-weight:400;cursor:pointer;margin-top:1.8rem;transition:opacity 0.2s}
+.form-submit:hover{opacity:0.82}
+.form-note{font-size:0.58rem;letter-spacing:0.06em;color:rgba(240,235,225,0.18);text-align:center;margin-top:0.8rem}
+
+footer{padding:2rem 3rem;border-top:0.5px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+.footer-logo{font-size:0.9rem;font-weight:300;letter-spacing:0.1em}
+.footer-logo span{color:var(--gold)}
+.footer-email{font-size:0.65rem;letter-spacing:0.1em;color:var(--muted);text-decoration:none;transition:color 0.2s}
+.footer-email:hover{color:var(--gold)}
+.footer-copy{font-size:0.58rem;letter-spacing:0.08em;color:rgba(240,235,225,0.18)}
+
+@keyframes up{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:none}}
+.reveal{opacity:0;transform:translateY(22px);transition:opacity 0.75s ease,transform 0.75s ease}
+.reveal.visible{opacity:1;transform:none}
+
+@media(max-width:768px){
+  nav{padding:1.2rem 1.5rem}
+  .nav-links{display:none}
+  .hero{padding:0 1.5rem 4rem}
+  .hero-line{display:none}
+  section{padding:5rem 1.5rem}
+  .services-grid{grid-template-columns:1fr}
+  .svc{border-right:none;border-bottom:0.5px solid var(--border)}
+  .svc:last-child{border-bottom:none}
+  .work-grid{grid-template-columns:1fr 1fr}
+  .work-item.wide{grid-column:span 1}
+  .form-section{grid-template-columns:1fr;gap:3rem}
+  .frow{grid-template-columns:1fr}
+  footer{flex-direction:column;gap:1rem;text-align:center}
+}
+</style>
+</head>
+<body>
+
+<nav id="nav">
+  <div class="nav-logo">photo<span>stressed</span></div>
+  <div class="nav-links">
+    <a href="#servicos">Serviços</a>
+    <a href="#trabalhos">Trabalhos</a>
+    <a href="#contacto">Contacto</a>
+  </div>
+  <a href="#contacto" class="nav-cta">Pedir proposta</a>
+</nav>
+
+<section class="hero" id="inicio">
+  <div class="hero-line"></div>
+  <div>
+    <p class="hero-tag">Leiria · Disponível em todo o país</p>
+    <h1 class="hero-title">Fotografia<br>& <em>Vídeo</em><br>que ficam.</h1>
+    <p class="hero-sub">Capturo histórias reais para marcas que querem ser lembradas. Cada imagem, cada frame, com intenção.</p>
+    <div class="hero-actions">
+      <button class="btn-primary" onclick="document.getElementById('contacto').scrollIntoView({behavior:'smooth'})">Pedir proposta</button>
+      <button class="btn-ghost" onclick="document.getElementById('trabalhos').scrollIntoView({behavior:'smooth'})">Ver trabalhos</button>
+    </div>
+  </div>
+  <span class="hero-scroll">Scroll</span>
+</section>
+
+<section id="servicos">
+  <p class="s-label reveal">O que faço</p>
+  <h2 class="s-title reveal">Serviços</h2>
+  <div class="services-grid reveal">
+    <div class="svc">
+      <p class="svc-num">01</p>
+      <h3 class="svc-name">Vídeo Corporativo</h3>
+      <p class="svc-desc">Institucional, formação interna ou lançamentos. Vídeo que comunica com autoridade e deixa marca.</p>
+    </div>
+    <div class="svc">
+      <p class="svc-num">02</p>
+      <h3 class="svc-name">Fotografia de Eventos</h3>
+      <p class="svc-desc">Conferências, teambuildings e lançamentos. Momentos que merecem ser preservados com qualidade.</p>
+    </div>
+    <div class="svc">
+      <p class="svc-num">03</p>
+      <h3 class="svc-name">Conteúdo Digital</h3>
+      <p class="svc-desc">Reels, stories e posts criados para converter e gerar impacto nas redes sociais da sua marca.</p>
+    </div>
+  </div>
+</section>
+
+<section id="trabalhos">
+  <p class="s-label reveal">Portfólio</p>
+  <h2 class="s-title reveal">Trabalhos <em>selecionados</em></h2>
+  <div class="work-filter reveal">
+    <button class="filter-btn active" data-filter="all">Todos</button>
+    <button class="filter-btn" data-filter="foto">Fotografia</button>
+    <button class="filter-btn" data-filter="video">Vídeo</button>
+  </div>
+  <div class="work-grid reveal" id="work-grid">
+    <div class="work-item wide video" data-cat="video">
+      <img class="work-img" src="https://images.unsplash.com/photo-1478720568477-152d9b164e26?w=1200&q=80" alt="Vídeo corporativo">
+      <div class="work-overlay">
+        <p class="work-cat">Vídeo</p>
+        <p class="work-name">Institucional — Empresa X</p>
+      </div>
+      <div class="work-play"><svg width="12" height="14" viewBox="0 0 12 14" fill="none"><path d="M1 1l10 6-10 6V1z" stroke="#F0EBE1" stroke-width="1" fill="rgba(240,235,225,0.2)"/></svg></div>
+    </div>
+    <div class="work-item" data-cat="foto">
+      <img class="work-img" src="https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&q=80" alt="Evento">
+      <div class="work-overlay">
+        <p class="work-cat">Fotografia</p>
+        <p class="work-name">Evento — Conferência Y</p>
+      </div>
+    </div>
+    <div class="work-item" data-cat="foto">
+      <img class="work-img" src="https://images.unsplash.com/photo-1492691527719-9d1e07e534b4?w=800&q=80" alt="Evento exterior">
+      <div class="work-overlay">
+        <p class="work-cat">Fotografia</p>
+        <p class="work-name">Evento — Gala Anual</p>
+      </div>
+    </div>
+    <div class="work-item video" data-cat="video">
+      <img class="work-img" src="https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=800&q=80" alt="Reels">
+      <div class="work-overlay">
+        <p class="work-cat">Vídeo</p>
+        <p class="work-name">Conteúdo Digital — Brand Z</p>
+      </div>
+      <div class="work-play"><svg width="12" height="14" viewBox="0 0 12 14" fill="none"><path d="M1 1l10 6-10 6V1z" stroke="#F0EBE1" stroke-width="1" fill="rgba(240,235,225,0.2)"/></svg></div>
+    </div>
+    <div class="work-item wide" data-cat="foto">
+      <img class="work-img" src="https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=1200&q=80" alt="Fotografia evento">
+      <div class="work-overlay">
+        <p class="work-cat">Fotografia</p>
+        <p class="work-name">Evento — Lançamento W</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="contacto">
+  <div class="form-section">
+    <div class="form-intro reveal">
+      <p class="s-label">Vamos trabalhar juntos</p>
+      <h2 class="form-intro-title">Conte-me o<br>seu <em>projeto</em></h2>
+      <p class="form-intro-text">Preencha o formulário e recebe uma proposta personalizada em menos de 48 horas. Sem compromisso.</p>
+      <div class="form-steps">
+        <div class="fstep">
+          <span class="fstep-num">1</span>
+          <div>
+            <p class="fstep-title">Preenche o formulário</p>
+            <p class="fstep-desc">Conta-me o projeto em 2 minutos.</p>
+          </div>
+        </div>
+        <div class="fstep">
+          <span class="fstep-num">2</span>
+          <div>
+            <p class="fstep-title">Recebe proposta</p>
+            <p class="fstep-desc">Envio orçamento detalhado em 48h.</p>
+          </div>
+        </div>
+        <div class="fstep">
+          <span class="fstep-num">3</span>
+          <div>
+            <p class="fstep-title">Arrancamos</p>
+            <p class="fstep-desc">Marcamos reunião e definimos os detalhes.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="reveal">
+      <form name="proposta" method="POST" data-netlify="true" id="proposal-form">
+        <input type="hidden" name="form-name" value="proposta">
+        <div class="frow">
+          <div class="field">
+            <label>Nome *</label>
+            <input type="text" name="nome" placeholder="João Silva" required>
+          </div>
+          <div class="field">
+            <label>Email *</label>
+            <input type="email" name="email" placeholder="joao@empresa.pt" required>
+          </div>
+        </div>
+        <div class="frow">
+          <div class="field">
+            <label>Empresa</label>
+            <input type="text" name="empresa" placeholder="Nome da empresa">
+          </div>
+          <div class="field">
+            <label>Telefone</label>
+            <input type="tel" name="telefone" placeholder="+351 9xx xxx xxx">
+          </div>
+        </div>
+        <div class="frow full">
+          <div class="field">
+            <label>Tipo de projeto *</label>
+            <select name="servico" required>
+              <option value="" disabled selected>Selecione o serviço</option>
+              <option>Vídeo corporativo / institucional</option>
+              <option>Fotografia de evento</option>
+              <option>Conteúdo para redes sociais</option>
+              <option>Outro</option>
+            </select>
+          </div>
+        </div>
+        <div class="frow">
+          <div class="field">
+            <label>Data prevista</label>
+            <input type="text" name="data" placeholder="Ex: Agosto 2025">
+          </div>
+          <div class="field">
+            <label>Orçamento aproximado</label>
+            <select name="orcamento">
+              <option value="" disabled selected>Selecione</option>
+              <option>Menos de 500€</option>
+              <option>500€ – 1.000€</option>
+              <option>1.000€ – 3.000€</option>
+              <option>Mais de 3.000€</option>
+            </select>
+          </div>
+        </div>
+        <div class="frow full">
+          <div class="field">
+            <label>Descreva o projeto *</label>
+            <textarea name="descricao" placeholder="Onde é? Quantas horas? Que resultado espera?" required></textarea>
+          </div>
+        </div>
+        <button type="submit" class="form-submit" id="submit-btn">Pedir proposta gratuita</button>
+        <p class="form-note">Resposta em menos de 48h · Sem compromisso</p>
+      </form>
+      <div id="form-success" style="display:none;padding:3rem 0;text-align:center">
+        <p style="font-size:1.6rem;font-weight:200;margin-bottom:1rem;color:var(--fg);letter-spacing:-0.01em">Mensagem recebida.</p>
+        <p style="font-size:0.78rem;color:var(--muted);line-height:1.8;font-weight:300">Obrigado pelo contacto.<br>Recebe a minha proposta em menos de 48 horas.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="footer-logo">photo<span>stressed</span></div>
+  <a href="mailto:[SEU EMAIL]" class="footer-email">[SEU EMAIL]</a>
+  <p class="footer-copy">© 2025 · Leiria</p>
+</footer>
+
+<script>
+window.addEventListener('scroll',()=>{
+  document.getElementById('nav').classList.toggle('scrolled',window.scrollY>60)
+})
+const obs=new IntersectionObserver(e=>{e.forEach(i=>{if(i.isIntersecting)i.target.classList.add('visible')})},{threshold:0.1})
+document.querySelectorAll('.reveal').forEach(el=>obs.observe(el))
+document.querySelectorAll('.filter-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'))
+    btn.classList.add('active')
+    const f=btn.dataset.filter
+    document.querySelectorAll('.work-item').forEach(item=>{
+      item.style.display=f==='all'||item.dataset.cat===f?'block':'none'
+    })
+  })
+})
+document.getElementById('proposal-form').addEventListener('submit',function(e){
+  e.preventDefault()
+  const btn=document.getElementById('submit-btn')
+  btn.textContent='A enviar...'
+  btn.style.opacity='0.6'
+  fetch('/',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams(new FormData(this)).toString()})
+    .then(()=>{
+      this.style.display='none'
+      document.getElementById('form-success').style.display='block'
+    })
+    .catch(()=>{btn.textContent='Pedir proposta gratuita';btn.style.opacity='1'})
+})
+</script>
+</body>
+</html>
