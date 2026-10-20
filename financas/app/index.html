@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="pt-PT">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'">
+<title>Finanças</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app">
+  <aside class="lateral">
+    <div class="marca">Finanças</div>
+    <nav id="nav">
+      <button data-vista="resumo">Resumo</button>
+      <button data-vista="movimentos">Movimentos</button>
+      <button data-vista="impostos">Impostos</button>
+      <button data-vista="definicoes">Definições</button>
+    </nav>
+    <button id="btn-novo" class="primario" title="Novo movimento (⌘N)">+ Novo movimento</button>
+  </aside>
+
+  <main>
+    <header class="topo">
+      <h1 id="titulo"></h1>
+      <div class="periodo">
+        <select id="sel-mes" aria-label="Mês"></select>
+        <select id="sel-ano" aria-label="Ano"></select>
+      </div>
+    </header>
+    <div id="conteudo"></div>
+  </main>
+</div>
+
+<dialog id="dlg">
+  <form id="form" novalidate>
+    <h2 id="dlg-titulo">Novo movimento</h2>
+    <div class="seg" role="radiogroup" aria-label="Tipo">
+      <label><input type="radio" name="tipo" value="entrada" checked><span>Entrada</span></label>
+      <label><input type="radio" name="tipo" value="saida"><span>Saída</span></label>
+      <label><input type="radio" name="tipo" value="imposto"><span>Imposto</span></label>
+    </div>
+    <div class="grelha">
+      <label>Data<input type="date" name="data" required></label>
+      <label>Categoria<select name="categoria"></select></label>
+      <label class="larga">Descrição<input name="descricao" autocomplete="off" required></label>
+      <label><span id="lbl-valor">Valor sem IVA (€)</span><input name="valor" type="number" step="0.01" min="0" inputmode="decimal" required></label>
+      <label class="so-entrada">IVA (%)<input name="iva" type="number" step="0.1" min="0"></label>
+      <label class="so-entrada">Retenção IRS (%)<input name="irs" type="number" step="0.1" min="0"></label>
+      <label class="larga">Notas<input name="notas" autocomplete="off"></label>
+    </div>
+    <p id="previa" class="previa"></p>
+    <p id="erro" class="erro" hidden></p>
+    <div class="acoes">
+      <button type="button" id="btn-cancelar">Cancelar</button>
+      <button type="submit" class="primario">Guardar</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="tooltip" class="tooltip" hidden></div>
+<input type="file" id="ficheiro" accept="application/json,.json" hidden>
+<script src="app.js"></script>
+</body>
+</html>

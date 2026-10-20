@@ -1,0 +1,26 @@
+{
+  "name": "financas",
+  "productName": "Finanças",
+  "version": "0.1.0",
+  "description": "Controlo financeiro pessoal: entradas, impostos e saídas.",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "mac": "electron-builder --mac"
+  },
+  "devDependencies": {
+    "electron": "44.9.2",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "pt.photostressed.financas",
+    "productName": "Finanças",
+    "files": ["main.js", "app/**/*"],
+    "mac": {
+      "category": "public.app-category.finance",
+      "target": [{ "target": "dir", "arch": ["arm64", "x64"] }],
+      "identity": null
+    }
+  }
+}
