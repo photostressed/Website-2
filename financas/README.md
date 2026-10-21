@@ -26,15 +26,15 @@ Precisas do [Node.js](https://nodejs.org) (versão LTS).
 cd financas
 npm install
 npm start          # abre a app numa janela
-npm run mac        # cria Finanças.app em dist/mac-arm64 (e dist/mac para Intel)
+npm run mac        # cria Financas.app em dist/mac-arm64 (aparece como “Finanças”)
 ```
 
-Copia a `Finanças.app` para a pasta Aplicações. Como não está assinada pela Apple, abre-a da primeira vez
+Copia a `Financas.app` para a pasta Aplicações. Como não está assinada pela Apple, abre-a da primeira vez
 com **clique direito → Abrir**, ou autoriza em Definições do Sistema → Privacidade e Segurança.
 
 ## Onde ficam os dados
 
-Ficam só no teu Mac, sem servidores nem contas: em `~/Library/Application Support/Finanças/` na app,
+Ficam só no teu Mac, sem servidores nem contas: em `~/Library/Application Support/Financas/` na app,
 ou no armazenamento do browser se abrires o `index.html`. Faz de vez em quando
 *Definições → Exportar cópia de segurança*.
 

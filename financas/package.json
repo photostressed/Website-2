@@ -1,6 +1,6 @@
 {
   "name": "financas",
-  "productName": "Finanças",
+  "productName": "Financas",
   "version": "0.1.0",
   "description": "Controlo financeiro pessoal: entradas, impostos e saídas.",
   "private": true,
@@ -15,12 +15,26 @@
   },
   "build": {
     "appId": "pt.photostressed.financas",
-    "productName": "Finanças",
-    "files": ["main.js", "app/**/*"],
+    "productName": "Financas",
+    "files": [
+      "main.js",
+      "app/**/*"
+    ],
     "mac": {
       "category": "public.app-category.finance",
-      "target": [{ "target": "dir", "arch": ["arm64", "x64"] }],
-      "identity": null
+      "target": [
+        {
+          "target": "dir",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "identity": null,
+      "extendInfo": {
+        "CFBundleDisplayName": "Finanças",
+        "CFBundleName": "Finanças"
+      }
     }
   }
 }

@@ -1,6 +1,9 @@
 const { app, BrowserWindow, nativeTheme, shell } = require('electron');
 const path = require('node:path');
 
+// Pasta de dados com nome sem acentos, igual em `npm start` e na app instalada.
+app.setPath('userData', path.join(app.getPath('appData'), 'Financas'));
+
 function criarJanela() {
   const win = new BrowserWindow({
     width: 1240,
