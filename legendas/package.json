@@ -1,0 +1,37 @@
+{
+  "name": "legendas",
+  "productName": "Legendas",
+  "version": "0.1.0",
+  "description": "Legendagem automática de vídeos (Whisper local) para ficheiros .srt.",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "mac": "electron-builder --mac"
+  },
+  "devDependencies": {
+    "electron": "44.9.2",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "pt.photostressed.legendas",
+    "productName": "Legendas",
+    "files": [
+      "main.js",
+      "preload.js",
+      "app/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.video",
+      "target": [
+        {
+          "target": "dir",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "identity": null
+    }
+  }
+}

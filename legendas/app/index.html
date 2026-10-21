@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="pt-PT">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; media-src 'self' file:">
+<title>Legendas</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="topo">
+  <div class="marca">Legendas</div>
+  <div class="topo-acoes">
+    <button id="btn-novo" hidden>+ Novo vídeo</button>
+  </div>
+</header>
+
+<main>
+  <p id="so-mac" class="painel aviso-erro" hidden>Esta página só funciona dentro da app Legendas no Mac.</p>
+
+  <section id="prep" class="painel" hidden>
+    <h2>Preparação <small>só é preciso fazer uma vez</small></h2>
+    <ol class="passos">
+      <li id="passo-programas">
+        <div class="passo-topo"><span class="estado"></span><b>Instalar o ffmpeg e o Whisper</b></div>
+        <p class="nota">No Terminal, se ainda não tens o <a href="https://brew.sh" data-link>Homebrew</a>, instala-o primeiro:</p>
+        <div class="comando"><code>/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"</code><button data-copiar>Copiar</button></div>
+        <p class="nota">Depois instala os dois programas:</p>
+        <div class="comando"><code>brew install ffmpeg whisper-cpp</code><button data-copiar>Copiar</button></div>
+      </li>
+      <li id="passo-modelo">
+        <div class="passo-topo"><span class="estado"></span><b>Descarregar o modelo de reconhecimento de voz</b></div>
+        <p class="nota">Whisper large-v3-turbo · cerca de 1,6 GB · fica guardado no Mac e funciona sem internet.</p>
+        <button id="btn-modelo" class="primario">Descarregar modelo</button>
+        <div id="modelo-progresso" class="progresso" hidden><div class="barra"><i></i></div><span></span></div>
+      </li>
+    </ol>
+    <button id="btn-verificar">Verificar outra vez</button>
+  </section>
+
+  <section id="novo" class="painel">
+    <div id="zona" class="zona" tabindex="0">
+      <b>Arrasta para aqui um vídeo ou áudio</b>
+      <span class="nota">Para as legendas coincidirem com a montagem, exporta do DaVinci o áudio da timeline (ou o vídeo final).</span>
+      <button id="btn-escolher">Escolher ficheiro…</button>
+      <span id="ficheiro-nome" class="ficheiro"></span>
+    </div>
+
+    <div class="opcoes">
+      <div class="campo"><span class="rot">Língua do vídeo</span>
+        <div class="seg" role="radiogroup" aria-label="Língua">
+          <label><input type="radio" name="modo" value="pt" checked><span>Português</span></label>
+          <label><input type="radio" name="modo" value="en-pt"><span>Inglês → Português</span></label>
+          <label><input type="radio" name="modo" value="en"><span>Inglês</span></label>
+        </div></div>
+      <label class="campo largo"><span class="rot">Nomes e palavras difíceis <span class="opc">(opcional)</span></span>
+        <input id="prompt" placeholder="ex.: Photostressed, Quinta da Aveleda, Ana e Rui">
+        <small>Ajuda o Whisper a escrever bem nomes próprios e termos que aparecem no vídeo.</small></label>
+      <label class="campo"><span class="rot">Caracteres por linha</span><input id="max-car" type="number" min="20" max="70" value="42"></label>
+      <label class="campo"><span class="rot">Linhas por legenda</span><select id="max-linhas"><option value="2">2</option><option value="1">1</option></select></label>
+    </div>
+
+    <div id="deepl" class="deepl" hidden>
+      <p class="nota">A tradução usa o <b>DeepL</b> (português de Portugal). Cria uma conta gratuita em
+        <a href="https://www.deepl.com/pro-api" data-link>deepl.com/pro-api</a> (500 000 caracteres por mês, chega para muitas horas de vídeo) e cola aqui a chave.</p>
+      <div class="linha-chave"><input id="chave-deepl" type="password" placeholder="Chave da API do DeepL" autocomplete="off"><button id="btn-chave">Guardar chave</button><span id="chave-estado" class="nota"></span></div>
+    </div>
+
+    <div class="acoes-novo">
+      <button id="btn-criar" class="primario" disabled>Criar legendas</button>
+      <div id="progresso" class="progresso" hidden><div class="barra"><i></i></div><span id="progresso-texto"></span><button id="btn-cancelar">Cancelar</button></div>
+    </div>
+    <p id="erro" class="aviso-erro" hidden></p>
+    <p id="retomar" class="nota" hidden></p>
+  </section>
+
+  <section id="editor" hidden>
+    <div class="barra-editor painel">
+      <div><b id="ed-titulo"></b><span id="ed-info" class="nota"></span></div>
+      <div class="procurar">
+        <input id="procurar" placeholder="Procurar"><input id="substituir" placeholder="Substituir por"><button id="btn-substituir">Substituir tudo</button>
+      </div>
+      <div class="botoes">
+        <button id="btn-mostrar" hidden>Mostrar no Finder</button>
+        <button id="btn-guardar" class="primario">Guardar .srt</button>
+      </div>
+    </div>
+    <div class="editor-grelha">
+      <div class="coluna-video">
+        <div class="video-caixa">
+          <video id="video" controls preload="metadata"></video>
+          <div id="sobreposicao" class="sobreposicao"></div>
+        </div>
+        <p id="sem-video" class="nota" hidden>Pré-visualização indisponível para este formato. As legendas funcionam na mesma.</p>
+        <p class="nota dica">Clica no número de uma legenda para saltar para esse momento. No DaVinci: <b>File → Import → Subtitle</b> e arrasta o .srt para o início da timeline.</p>
+      </div>
+      <div id="lista" class="lista"></div>
+    </div>
+  </section>
+</main>
+
+<div id="aviso" class="aviso" role="status" hidden></div>
+<script src="legendas-core.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
