@@ -13,6 +13,7 @@
     <div class="marca">Finanças</div>
     <nav id="nav">
       <button data-vista="resumo">Resumo</button>
+      <button data-vista="trabalhos">Trabalhos</button>
       <button data-vista="movimentos">Movimentos</button>
       <button data-vista="fixas">Despesas fixas</button>
       <button data-vista="impostos">Impostos</button>
@@ -82,6 +83,32 @@
     <p id="fixa-erro" class="erro" hidden></p>
     <div class="acoes">
       <button type="button" id="fixa-cancelar">Cancelar</button>
+      <button type="submit" class="primario">Guardar</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlg-trabalho">
+  <form id="form-trabalho" novalidate>
+    <h2 id="trab-titulo">Novo trabalho</h2>
+    <div class="grelha">
+      <label>Cliente<input name="cliente" autocomplete="off" required></label>
+      <label>Contacto <span class="opc">(opcional)</span><input name="contacto" autocomplete="off" placeholder="email ou telefone"></label>
+      <label>Serviço<select name="servico"></select></label>
+      <label>Data do trabalho<input name="data" type="date" required></label>
+      <label class="larga">Descrição <span class="opc">(opcional)</span><input name="descricao" autocomplete="off" placeholder="ex.: Casamento na Quinta da Aveleda"></label>
+      <label>Fase<select name="fase"></select></label>
+      <label>Valor sem IVA (€)<input name="valor" type="number" step="0.01" min="0" inputmode="decimal"></label>
+      <label>IVA (%)<input name="iva" type="number" step="0.1" min="0"></label>
+      <label>Retenção IRS (%)<input name="irs" type="number" step="0.1" min="0"></label>
+      <label class="interruptor larga"><input type="checkbox" name="pago"><span>Pago (já recebi e passei recibo)</span></label>
+      <label>Data do pagamento<input name="dataPagamento" type="date"></label>
+      <label class="larga">Notas <span class="opc">(opcional)</span><input name="notas" autocomplete="off"></label>
+    </div>
+    <p id="trab-previa" class="previa"></p>
+    <p id="trab-erro" class="erro" hidden></p>
+    <div class="acoes">
+      <button type="button" id="trab-cancelar">Cancelar</button>
       <button type="submit" class="primario">Guardar</button>
     </div>
   </form>

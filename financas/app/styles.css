@@ -222,3 +222,34 @@ button:disabled{opacity:.35;cursor:default}
 .aviso{position:fixed;bottom:1.2rem;left:50%;transform:translateX(-50%);z-index:60;background:var(--text);color:var(--bg);padding:.6rem 1rem;border-radius:9px;font-size:.85rem;box-shadow:0 8px 24px rgba(0,0,0,.2);max-width:calc(100vw - 32px)}
 .interruptor{display:flex;align-items:center;gap:.6rem;cursor:pointer;font-size:.9rem}
 .interruptor input{width:18px;height:18px;accent-color:var(--accent);cursor:pointer}
+
+/* Dinheiro em conta / por receber */
+.dinheiro{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;background:var(--surface);border:1px solid var(--border);border-radius:12px;margin-bottom:.75rem;overflow:hidden}
+.dinheiro>*{display:flex;flex-direction:column;gap:.1rem;padding:.9rem 1.1rem;border:0;border-right:1px solid var(--border);border-radius:0;background:none;text-align:left;font:inherit;color:inherit}
+.dinheiro>*:last-child{border-right:0}
+.dinheiro button{cursor:pointer}
+.dinheiro button:hover{background:var(--surface-2)}
+.dinheiro .rot{font-size:.78rem;color:var(--text-2)}
+.dinheiro b{font-size:1.35rem;font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.dinheiro small{font-size:.74rem;color:var(--muted)}
+.atraso{color:var(--negativo)}
+td small.atraso{color:var(--negativo)}
+
+/* Trabalhos */
+.chips{display:flex;flex-wrap:wrap;gap:.35rem}
+.chip{border-radius:999px;padding:.3rem .7rem;font-size:.8rem;color:var(--text-2)}
+.chip span{color:var(--muted);margin-left:.15rem;font-variant-numeric:tabular-nums}
+.chip.ativo{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.chip.ativo span{color:inherit;opacity:.75}
+select.fase{padding:.25rem .4rem;font-size:.8rem}
+.pagamento{font-size:.8rem;padding:.3rem .6rem;white-space:nowrap;color:var(--text-2)}
+.pagamento small{display:inline;color:inherit;opacity:.75;font-size:.72rem;margin-left:.2rem}
+.pagamento.pago{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.pagamento.pago:hover{background:var(--accent);opacity:.85}
+.opc{color:var(--muted)}
+.grelha .interruptor{flex-direction:row;color:var(--text);font-size:.85rem;padding-top:.3rem}
+@media (max-width: 640px){
+  .dinheiro{grid-template-columns:1fr}
+  .dinheiro>*{border-right:0;border-bottom:1px solid var(--border)}
+  .dinheiro>*:last-child{border-bottom:0}
+}

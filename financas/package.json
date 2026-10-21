@@ -1,7 +1,7 @@
 {
   "name": "financas",
   "productName": "Financas",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Controlo financeiro pessoal: entradas, impostos e saídas.",
   "private": true,
   "main": "main.js",

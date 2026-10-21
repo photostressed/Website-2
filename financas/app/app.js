@@ -11,7 +11,10 @@ const TIPOS = { entrada: 'Entrada', saida: 'Saída', imposto: 'Imposto' };
 const CATEGORIAS_IMPOSTO = ['IVA', 'Segurança Social', 'IRS', 'Outros impostos'];
 
 const VERSAO = 2;
-const VISTAS = { resumo: 'Resumo', movimentos: 'Movimentos', fixas: 'Despesas fixas', impostos: 'Impostos', personalizacao: 'Personalização', definicoes: 'Definições' };
+const VISTAS = { resumo: 'Resumo', trabalhos: 'Trabalhos', movimentos: 'Movimentos', fixas: 'Despesas fixas', impostos: 'Impostos', personalizacao: 'Personalização', definicoes: 'Definições' };
+const FASES = { pedido: 'Pedido', orcamento: 'Orçamento enviado', confirmado: 'Confirmado', feito: 'Feito', entregue: 'Entregue', cancelado: 'Cancelado' };
+// Fases em que o trabalho já está garantido e, se não estiver pago, o dinheiro é "por receber".
+const FASES_GARANTIDAS = ['confirmado', 'feito', 'entregue'];
 // Cores de destaque: [cor, texto sobre a cor] para modo claro e escuro.
 const CORES = {
   grafite: { nome: 'Grafite', claro: ['#0b0b0b', '#fcfcfb'], escuro: ['#f0efec', '#121211'] },
@@ -24,13 +27,14 @@ const CORES = {
 
 const padrao = () => ({
   versao: VERSAO,
-  definicoes: { iva: 23, irs: 23, ssTaxa: 21.4, ssBase: 70 },
+  definicoes: { iva: 23, irs: 23, ssTaxa: 21.4, ssBase: 70, saldoInicial: 0 },
   categorias: {
     entrada: ['Fotografia', 'Vídeo', 'Edição', 'Outros rendimentos'],
     saida: ['Casa', 'Contas da casa', 'Comida', 'Transporte', 'Saúde', 'Equipamento', 'Software e serviços', 'Lazer', 'Outros'],
   },
   personalizacao: { nome: 'Finanças', tema: 'auto', cor: 'grafite', vistaInicial: 'ultima', periodoInicial: 'mes' },
   fixas: [],
+  trabalhos: [],
   movimentos: [],
 });
 
@@ -44,6 +48,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const novoId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 const doisDig = n => String(n).padStart(2, '0');
 const hoje = () => { const d = new Date(); return `${d.getFullYear()}-${doisDig(d.getMonth() + 1)}-${doisDig(d.getDate())}`; };
+const plural = (n, um, varios) => `${n} ${n === 1 ? um : varios}`;
 const dataPt = iso => { const [a, m, d] = iso.split('-'); return `${d}/${m}/${a}`; };
 const mesChave = d => `${d.getFullYear()}-${doisDig(d.getMonth() + 1)}`;
 const mesPt = chave => { const [a, m] = chave.split('-'); return `${MESES[+m - 1]} ${a}`; };
@@ -96,6 +101,12 @@ function normalizar(d) {
         ...f, id: f.id || novoId(), valor: +f.valor, dia: Math.min(31, Math.max(1, +f.dia || 1)),
         fim: mesValido(f.fim) ? f.fim : '', retomada: mesValido(f.retomada) ? f.retomada : '',
         ativa: f.ativa !== false, iva: +f.iva || 0, irs: +f.irs || 0, geradas: Array.isArray(f.geradas) ? f.geradas : [],
+      })),
+    trabalhos: (Array.isArray(d.trabalhos) ? d.trabalhos : [])
+      .filter(t => t && t.cliente && Number.isFinite(+t.valor) && /^\d{4}-\d{2}-\d{2}$/.test(t.data))
+      .map(t => ({
+        ...t, id: t.id || novoId(), valor: +t.valor, iva: +t.iva || 0, irs: +t.irs || 0,
+        fase: FASES[t.fase] ? t.fase : 'pedido', pago: !!t.pago, contacto: t.contacto || '', descricao: t.descricao || '', notas: t.notas || '',
       })),
     movimentos: (Array.isArray(d.movimentos) ? d.movimentos : [])
       .filter(m => m && TIPOS[m.tipo] && /^\d{4}-\d{2}-\d{2}$/.test(m.data) && Number.isFinite(+m.valor))
@@ -274,7 +285,7 @@ function preencherPeriodo() {
   $('#sel-mes').innerHTML = `<option value="0"${periodo.mes === 0 ? ' selected' : ''}>Ano inteiro</option>` +
     MESES_LONGOS.map((n, i) => `<option value="${i + 1}"${periodo.mes === i + 1 ? ' selected' : ''}>${n}</option>`).join('');
   // O separador Impostos é sempre anual.
-  const semPeriodo = ['fixas', 'personalizacao', 'definicoes'].includes(vista);
+  const semPeriodo = ['trabalhos', 'fixas', 'personalizacao', 'definicoes'].includes(vista);
   $('#sel-mes').hidden = semPeriodo || vista === 'impostos';
   $('#sel-ano').hidden = semPeriodo;
 }
@@ -288,7 +299,7 @@ function render() {
   $('#titulo').textContent = VISTAS[vista];
   preencherPeriodo();
   esconderTooltip();
-  ({ resumo: renderResumo, movimentos: renderMovimentos, fixas: renderFixas, impostos: renderImpostos, personalizacao: renderPersonalizacao, definicoes: renderDefinicoes }[vista])();
+  ({ resumo: renderResumo, trabalhos: renderTrabalhos, movimentos: renderMovimentos, fixas: renderFixas, impostos: renderImpostos, personalizacao: renderPersonalizacao, definicoes: renderDefinicoes }[vista])();
 }
 
 // ---------- Resumo ----------
@@ -315,9 +326,10 @@ function renderResumo() {
   const semDados = estado.movimentos.length === 0;
 
   $('#conteudo').innerHTML = `
+    ${faixaDinheiro()}
     <section class="cartoes">
       ${cartao('Recebido', t.recebido, `Faturado ${fmt(t.faturado)} sem IVA`)}
-      ${cartao('Despesas', t.despesas, `${lista.filter(m => m.tipo === 'saida').length} movimentos`)}
+      ${cartao('Despesas', t.despesas, plural(lista.filter(m => m.tipo === 'saida').length, 'movimento', 'movimentos'))}
       ${cartao('Impostos a pagar', t.aPagar, `IVA ${fmt(t.ivaPorEntregar)} · SS ${fmt(t.ssPorPagar)} · já pagos ${fmt(t.impostos)}`)}
       ${cartao('Saldo (fica para ti)', t.livre, 'recebido − despesas − impostos pagos e a pagar', 'destaque')}
     </section>
@@ -452,7 +464,7 @@ function tabelaMovimentos(lista, comAcoes) {
     const ent = m.tipo === 'entrada';
     return `<tr>
       <td>${dataPt(m.data)}</td>
-      <td>${esc(m.descricao)}${m.fixaId ? ' <span class="etiqueta" title="Lançada automaticamente como despesa fixa">fixa</span>' : ''}${m.notas ? `<small>${esc(m.notas)}</small>` : ''}</td>
+      <td>${esc(m.descricao)}${m.fixaId ? ' <span class="etiqueta" title="Lançada automaticamente como despesa fixa">fixa</span>' : ''}${m.trabalhoId ? ' <span class="etiqueta" title="Criada ao marcar um trabalho como pago">trabalho</span>' : ''}${m.notas ? `<small>${esc(m.notas)}</small>` : ''}</td>
       <td>${esc(m.categoria)}</td>
       <td><span class="tipo ${m.tipo}"><i></i>${TIPOS[m.tipo]}</span></td>
       ${comAcoes ? `<td class="num">${fmt(m.valor)}</td>
@@ -577,7 +589,7 @@ function renderFixas() {
       ${cartao('Saídas fixas por mês', porMes('saida'), 'renda, contas, subscrições…')}
       ${cartao('Impostos fixos por mês', porMes('imposto'), 'ex.: Segurança Social')}
       ${cartao('Entradas fixas por mês', porMes('entrada'), 'valor sem IVA (ex.: avenças)')}
-      ${cartao('Compromisso mensal', porMes('saida') + porMes('imposto'), `${estado.fixas.filter(emVigor).length} ativas`, 'destaque')}
+      ${cartao('Compromisso mensal', porMes('saida') + porMes('imposto'), plural(estado.fixas.filter(emVigor).length, 'ativa', 'ativas'), 'destaque')}
     </section>
     <section class="painel">
       <div class="painel-topo"><h2>As tuas despesas fixas</h2><button class="primario" data-acao="nova-fixa">+ Nova despesa fixa</button></div>
@@ -675,11 +687,241 @@ formFixa.addEventListener('submit', e => {
   render();
 });
 
+// ---------- Trabalhos ----------
+
+const filtrosT = { texto: '', estado: 'curso' };
+const FILTROS_T = {
+  curso: ['Em curso', t => t.fase !== 'cancelado' && !(t.pago && t.fase === 'entregue')],
+  'por-receber': ['Por receber', t => !t.pago && FASES_GARANTIDAS.includes(t.fase)],
+  negociacao: ['Pedidos e orçamentos', t => ['pedido', 'orcamento'].includes(t.fase)],
+  pagos: ['Pagos', t => t.pago],
+  todos: ['Todos', () => true],
+};
+
+// Dinheiro que entra na conta por um trabalho: valor + IVA − IRS retido pelo cliente.
+const aReceber = t => valores({ tipo: 'entrada', valor: t.valor, iva: t.iva, irs: t.irs }).liquido;
+const emConta = () => (estado.definicoes.saldoInicial || 0) + estado.movimentos.reduce((s, m) => s + valores(m).liquido, 0);
+const porReceber = () => estado.trabalhos.filter(FILTROS_T['por-receber'][1]);
+const diasDesde = iso => Math.floor((new Date(hoje()) - new Date(iso)) / 86400000);
+// Trabalho feito ou entregue há mais de 30 dias e ainda por pagar.
+const emAtraso = t => !t.pago && ['feito', 'entregue'].includes(t.fase) && diasDesde(t.data) > 30;
+
+function faixaDinheiro() {
+  const conta = emConta();
+  const lista = porReceber();
+  const fora = lista.reduce((s, t) => s + aReceber(t), 0);
+  const atraso = lista.filter(emAtraso).length;
+  return `<section class="dinheiro">
+    <div><span class="rot">Em conta</span><b class="${conta < 0 ? 'negativo' : ''}">${fmt(conta)}</b><small>dinheiro que já recebeste</small></div>
+    <button data-acao="ver-por-receber"><span class="rot">Por receber</span><b>${fmt(fora)}</b>
+      <small>${lista.length} trabalho${lista.length === 1 ? '' : 's'} por pagar${atraso ? ` · <span class="atraso">${atraso} em atraso</span>` : ''}</small></button>
+    <div><span class="rot">Total da empresa</span><b>${fmt(conta + fora)}</b><small>em conta + por receber</small></div>
+  </section>`;
+}
+
+function sincronizarMovimento(t) {
+  let m = t.movimentoId && estado.movimentos.find(x => x.id === t.movimentoId);
+  if (t.pago) {
+    const dados = {
+      tipo: 'entrada', categoria: t.servico, descricao: t.descricao ? `${t.cliente} — ${t.descricao}` : t.cliente,
+      valor: t.valor, iva: t.iva, irs: t.irs, data: t.dataPagamento || hoje(), trabalhoId: t.id,
+    };
+    if (m) Object.assign(m, dados);
+    else { m = { id: novoId(), criado: Date.now(), notas: '', ...dados }; estado.movimentos.push(m); t.movimentoId = m.id; }
+  } else if (m) {
+    estado.movimentos = estado.movimentos.filter(x => x !== m);
+    t.movimentoId = null;
+  }
+}
+
+function alternarPago(t) {
+  if (!t) return;
+  if (t.pago) {
+    if (!confirm(`Marcar “${t.cliente}” como não pago? A entrada de ${fmt(aReceber(t))} é retirada dos Movimentos.`)) return;
+    t.pago = false;
+  } else {
+    t.pago = true;
+    t.dataPagamento = hoje();
+    if (t.fase === 'pedido' || t.fase === 'orcamento') t.fase = 'confirmado';
+  }
+  sincronizarMovimento(t);
+  guardar();
+  render();
+  if (t.pago) aviso(`Pago: entrada de ${fmt(aReceber(t))} registada em Movimentos.`);
+}
+
+function apagarTrabalho(t) {
+  if (!t || !confirm(`Apagar o trabalho de “${t.cliente}”?`)) return;
+  if (t.movimentoId && !confirm('Este trabalho está pago. Manter a entrada nos Movimentos?\n\nOK = manter · Cancelar = apagar também')) {
+    estado.movimentos = estado.movimentos.filter(x => x.id !== t.movimentoId);
+  } else if (t.movimentoId) {
+    const m = estado.movimentos.find(x => x.id === t.movimentoId);
+    if (m) delete m.trabalhoId;
+  }
+  estado.trabalhos = estado.trabalhos.filter(x => x.id !== t.id);
+  guardar();
+  render();
+}
+
+function renderTrabalhos() {
+  const todos = estado.trabalhos;
+  const negociacao = todos.filter(FILTROS_T.negociacao[1]);
+  const anoAtual = String(agora.getFullYear());
+  const recebidoAno = todos.filter(t => t.pago && (t.dataPagamento || '').startsWith(anoAtual)).reduce((s, t) => s + aReceber(t), 0);
+
+  $('#conteudo').innerHTML = `
+    ${faixaDinheiro()}
+    <section class="cartoes">
+      ${cartao('Em negociação', negociacao.reduce((s, t) => s + aReceber(t), 0), plural(negociacao.length, 'pedido ou orçamento', 'pedidos e orçamentos'))}
+      ${cartao('Confirmados por fazer', todos.filter(t => t.fase === 'confirmado').reduce((s, t) => s + aReceber(t), 0), plural(todos.filter(t => t.fase === 'confirmado').length, 'trabalho', 'trabalhos'))}
+      ${cartao(`Recebido de trabalhos em ${anoAtual}`, recebidoAno, plural(todos.filter(t => t.pago && (t.dataPagamento || '').startsWith(anoAtual)).length, 'pago', 'pagos'))}
+      ${cartao('Em atraso', porReceber().filter(emAtraso).reduce((s, t) => s + aReceber(t), 0), 'feitos há mais de 30 dias, por pagar')}
+    </section>
+    <section class="painel">
+      <div class="painel-topo"><h2>Trabalhos</h2><button class="primario" data-acao="novo-trabalho">+ Novo trabalho</button></div>
+      <div class="filtros">
+        <input type="search" id="t-texto" placeholder="Procurar cliente, serviço ou notas…" value="${esc(filtrosT.texto)}">
+        <div class="chips">${Object.entries(FILTROS_T).map(([k, [nome, fn]]) =>
+          `<button class="chip${filtrosT.estado === k ? ' ativo' : ''}" data-filtro-t="${k}">${nome} <span>${todos.filter(fn).length}</span></button>`).join('')}</div>
+      </div>
+      <div id="lista-trab"></div>
+    </section>`;
+
+  $('#t-texto').addEventListener('input', e => { filtrosT.texto = e.target.value; atualizarTrabalhos(); });
+  $$('[data-filtro-t]').forEach(b => b.addEventListener('click', () => { filtrosT.estado = b.dataset.filtroT; renderTrabalhos(); }));
+  atualizarTrabalhos();
+}
+
+function atualizarTrabalhos() {
+  const q = filtrosT.texto.trim().toLocaleLowerCase('pt');
+  const lista = estado.trabalhos
+    .filter(FILTROS_T[filtrosT.estado][1])
+    .filter(t => !q || [t.cliente, t.contacto, t.servico, t.descricao, t.notas].some(s => (s || '').toLocaleLowerCase('pt').includes(q)))
+    .sort((a, b) => b.data.localeCompare(a.data));
+
+  if (!lista.length) {
+    $('#lista-trab').innerHTML = vazio(estado.trabalhos.length
+      ? 'Nenhum trabalho com este filtro.'
+      : 'Ainda não tens trabalhos. Regista cada pedido que te chega (site, email, Instagram, telefone) e acompanha-o até estar pago.',
+      estado.trabalhos.length ? '' : '<button class="primario" data-acao="novo-trabalho">+ Novo trabalho</button>');
+    return;
+  }
+  const linhas = lista.map(t => {
+    const atraso = emAtraso(t);
+    return `<tr class="${t.fase === 'cancelado' ? 'inativa' : ''}">
+      <td>${dataPt(t.data)}</td>
+      <td>${esc(t.cliente)}${t.contacto ? `<small>${esc(t.contacto)}</small>` : ''}</td>
+      <td>${esc(t.servico)}${t.descricao ? `<small>${esc(t.descricao)}</small>` : ''}</td>
+      <td><select class="fase" data-fase-t="${t.id}" aria-label="Fase">${Object.entries(FASES).map(([k, n]) => `<option value="${k}"${t.fase === k ? ' selected' : ''}>${n}</option>`).join('')}</select></td>
+      <td class="num">${fmt(aReceber(t))}<small>${fmt(t.valor)} sem IVA</small></td>
+      <td><button class="pagamento ${t.pago ? 'pago' : ''}" data-acao="pagar-trabalho" data-trabalho="${t.id}"
+        title="${t.pago ? 'Clica para marcar como não pago' : 'Clica para marcar como pago'}">${t.pago ? `✓ Pago <small>${dataPt(t.dataPagamento)}</small>` : 'Por pagar'}</button>
+        ${atraso ? `<small class="atraso">há ${diasDesde(t.data)} dias</small>` : ''}</td>
+      <td class="acoes-l">
+        <button class="link" data-acao="editar-trabalho" data-trabalho="${t.id}">Editar</button>
+        <button class="link perigo" data-acao="apagar-trabalho" data-trabalho="${t.id}">Apagar</button></td>
+    </tr>`;
+  }).join('');
+  $('#lista-trab').innerHTML = `<div class="tabela-wrap"><table>
+    <thead><tr><th>Data</th><th>Cliente</th><th>Serviço</th><th>Fase</th><th class="num">A receber</th><th>Pagamento</th><th></th></tr></thead>
+    <tbody>${linhas}</tbody></table></div>`;
+  $$('[data-fase-t]').forEach(sel => sel.addEventListener('change', () => {
+    const t = estado.trabalhos.find(x => x.id === sel.dataset.faseT);
+    t.fase = sel.value;
+    guardar();
+    renderTrabalhos();
+  }));
+}
+
+const dlgTrab = $('#dlg-trabalho');
+const formTrab = $('#form-trabalho');
+const campoT = n => formTrab.elements[n];
+let trabalhoEmEdicao = null;
+
+function atualizarFormTrabalho() {
+  campoT('dataPagamento').closest('label').hidden = !campoT('pago').checked;
+  const valor = parseFloat(campoT('valor').value);
+  if (valor > 0) {
+    const v = valores({ tipo: 'entrada', valor, iva: parseFloat(campoT('iva').value) || 0, irs: parseFloat(campoT('irs').value) || 0 });
+    $('#trab-previa').innerHTML = `O cliente paga <b>${fmt(valor + v.iva)}</b> e retém ${fmt(v.irs)} de IRS. Entram na conta <b>${fmt(v.liquido)}</b>.`
+      + (campoT('pago').checked ? ' Ao guardar, a entrada é registada em Movimentos.' : '');
+  } else {
+    $('#trab-previa').innerHTML = '';
+  }
+}
+
+function abrirFormTrabalho(t = null) {
+  formTrab.reset();
+  $('#trab-erro').hidden = true;
+  trabalhoEmEdicao = t ? t.id : null;
+  $('#trab-titulo').textContent = t ? 'Editar trabalho' : 'Novo trabalho';
+  preencherCategorias(campoT('servico'), 'entrada', t?.servico);
+  campoT('fase').innerHTML = Object.entries(FASES).map(([k, n]) => `<option value="${k}">${n}</option>`).join('');
+  campoT('cliente').value = t?.cliente || '';
+  campoT('contacto').value = t?.contacto || '';
+  campoT('descricao').value = t?.descricao || '';
+  campoT('data').value = t?.data || hoje();
+  campoT('fase').value = t?.fase || 'pedido';
+  campoT('valor').value = t?.valor ?? '';
+  campoT('iva').value = t ? t.iva : estado.definicoes.iva;
+  campoT('irs').value = t ? t.irs : estado.definicoes.irs;
+  campoT('pago').checked = !!t?.pago;
+  campoT('dataPagamento').value = t?.dataPagamento || hoje();
+  campoT('notas').value = t?.notas || '';
+  atualizarFormTrabalho();
+  dlgTrab.showModal();
+  campoT(t ? 'valor' : 'cliente').focus();
+}
+
+formTrab.addEventListener('input', atualizarFormTrabalho);
+formTrab.addEventListener('change', atualizarFormTrabalho);
+$('#trab-cancelar').addEventListener('click', () => dlgTrab.close());
+
+formTrab.addEventListener('submit', e => {
+  e.preventDefault();
+  const dados = {
+    cliente: campoT('cliente').value.trim(),
+    contacto: campoT('contacto').value.trim(),
+    servico: campoT('servico').value,
+    descricao: campoT('descricao').value.trim(),
+    data: campoT('data').value,
+    fase: campoT('fase').value,
+    valor: arred(parseFloat(campoT('valor').value) || 0),
+    iva: Math.max(0, parseFloat(campoT('iva').value) || 0),
+    irs: Math.max(0, parseFloat(campoT('irs').value) || 0),
+    pago: campoT('pago').checked,
+    dataPagamento: campoT('dataPagamento').value,
+    notas: campoT('notas').value.trim(),
+  };
+  const erro = !dados.cliente ? 'Escreve o nome do cliente.'
+    : !/^\d{4}-\d{2}-\d{2}$/.test(dados.data) ? 'Indica a data do trabalho.'
+    : dados.valor < 0 ? 'O valor não pode ser negativo.'
+    : dados.pago && !(dados.valor > 0) ? 'Para marcar como pago, indica o valor.'
+    : dados.pago && !/^\d{4}-\d{2}-\d{2}$/.test(dados.dataPagamento) ? 'Indica a data do pagamento.' : '';
+  if (erro) { $('#trab-erro').textContent = erro; $('#trab-erro').hidden = false; return; }
+
+  let t;
+  if (trabalhoEmEdicao) {
+    t = estado.trabalhos.find(x => x.id === trabalhoEmEdicao);
+    Object.assign(t, dados);
+  } else {
+    t = { id: novoId(), criado: Date.now(), movimentoId: null, ...dados };
+    estado.trabalhos.push(t);
+  }
+  sincronizarMovimento(t);
+  guardar();
+  dlgTrab.close();
+  render();
+});
+
+const algumDialogoAberto = () => dlg.open || dlgFixa.open || dlgTrab.open;
+
 // ---------- Personalização ----------
 
 function usoCategoria(tipo, nome) {
   return estado.movimentos.filter(m => m.tipo === tipo && m.categoria === nome).length
-    + estado.fixas.filter(f => f.tipo === tipo && f.categoria === nome).length;
+    + estado.fixas.filter(f => f.tipo === tipo && f.categoria === nome).length
+    + (tipo === 'entrada' ? estado.trabalhos.filter(t => t.servico === nome).length : 0);
 }
 
 function editorCategorias(tipo, titulo) {
@@ -721,7 +963,7 @@ function renderPersonalizacao() {
         <label>Ao abrir, mostrar
           <select id="p-vista">
             <option value="ultima"${p.vistaInicial === 'ultima' ? ' selected' : ''}>O último separador usado</option>
-            ${['resumo', 'movimentos', 'fixas', 'impostos'].map(v => `<option value="${v}"${p.vistaInicial === v ? ' selected' : ''}>${VISTAS[v]}</option>`).join('')}
+            ${['resumo', 'trabalhos', 'movimentos', 'fixas', 'impostos'].map(v => `<option value="${v}"${p.vistaInicial === v ? ' selected' : ''}>${VISTAS[v]}</option>`).join('')}
           </select></label>
         <label>Período ao abrir
           <select id="p-periodo">
@@ -763,6 +1005,7 @@ function renderPersonalizacao() {
     if (estado.categorias[tipo].includes(novo)) { alert(`Já existe a categoria “${novo}”.`); inp.value = antigo; return; }
     estado.categorias[tipo][i] = novo;
     for (const x of [...estado.movimentos, ...estado.fixas]) if (x.tipo === tipo && x.categoria === antigo) x.categoria = novo;
+    if (tipo === 'entrada') for (const t of estado.trabalhos) if (t.servico === antigo) t.servico = novo;
     guardar();
     renderPersonalizacao();
   }));
@@ -834,6 +1077,15 @@ function renderDefinicoes() {
     </section>
 
     <section class="painel">
+      <h2>Conta bancária</h2>
+      <div class="campos">
+        <label>Saldo inicial da conta (€)<input type="number" step="0.01" id="d-saldo" value="${d.saldoInicial}">
+          <small>O saldo que a conta tinha antes do primeiro movimento registado na app. Serve para o “Em conta” bater certo com o banco.</small></label>
+      </div>
+      <p class="nota" style="margin-top:.6rem">Em conta agora: <b>${fmt(emConta())}</b></p>
+    </section>
+
+    <section class="painel">
       <h2>Dados</h2>
       <p class="nota" style="margin-bottom:.8rem">Os dados ficam guardados só neste computador. Faz uma cópia de segurança de vez em quando.</p>
       <div class="botoes">
@@ -844,6 +1096,12 @@ function renderDefinicoes() {
       </div>
     </section>`;
 
+  $('#d-saldo').addEventListener('change', e => {
+    const v = parseFloat(e.target.value);
+    estado.definicoes.saldoInicial = Number.isFinite(v) ? arred(v) : 0;
+    guardar();
+    renderDefinicoes();
+  });
   $$('[data-def]').forEach(i => i.addEventListener('change', () => {
     const v = parseFloat(i.value);
     if (Number.isFinite(v) && v >= 0) { estado.definicoes[i.dataset.def] = v; guardar(); }
@@ -1000,16 +1258,24 @@ document.addEventListener('click', e => {
   if (!b) return;
   const m = b.dataset.id && estado.movimentos.find(x => x.id === b.dataset.id);
   const f = b.dataset.fixa && estado.fixas.find(x => x.id === b.dataset.fixa);
+  const tr = b.dataset.trabalho && estado.trabalhos.find(x => x.id === b.dataset.trabalho);
   switch (b.dataset.acao) {
     case 'novo': abrirForm(); break;
     case 'editar': abrirForm(m); break;
     case 'duplicar': abrirForm(m, true); break;
     case 'apagar':
-      if (m && confirm(`Apagar “${m.descricao}” (${fmt(m.valor)})?${m.fixaId ? ' Não volta a ser lançado este mês.' : ''}`)) {
+      if (m && confirm(`Apagar “${m.descricao}” (${fmt(m.valor)})?${m.fixaId ? ' Não volta a ser lançado este mês.' : ''}${m.trabalhoId ? ' O trabalho correspondente volta a ficar por pagar.' : ''}`)) {
         estado.movimentos = estado.movimentos.filter(x => x.id !== m.id);
+        const t = m.trabalhoId && estado.trabalhos.find(x => x.id === m.trabalhoId);
+        if (t) { t.pago = false; t.movimentoId = null; }
         guardar(); render();
       }
       break;
+    case 'novo-trabalho': abrirFormTrabalho(); break;
+    case 'editar-trabalho': abrirFormTrabalho(tr); break;
+    case 'pagar-trabalho': alternarPago(tr); break;
+    case 'apagar-trabalho': apagarTrabalho(tr); break;
+    case 'ver-por-receber': filtrosT.estado = 'por-receber'; irPara('trabalhos'); break;
     case 'nova-fixa': abrirFormFixa(); break;
     case 'editar-fixa': abrirFormFixa(f); break;
     case 'pausar-fixa':
@@ -1037,9 +1303,10 @@ document.addEventListener('click', e => {
     case 'importar-json': $('#ficheiro').click(); break;
     case 'exportar-csv': exportarCSV(); break;
     case 'apagar-tudo':
-      if (confirm('Apagar TODOS os movimentos e despesas fixas? Isto não pode ser desfeito. Exporta uma cópia antes, se quiseres.')) {
+      if (confirm('Apagar TODOS os movimentos, trabalhos e despesas fixas? Isto não pode ser desfeito. Exporta uma cópia antes, se quiseres.')) {
         estado.movimentos = [];
         estado.fixas = [];
+        estado.trabalhos = [];
         guardar(); render();
       }
       break;
@@ -1054,7 +1321,7 @@ $('#btn-novo').addEventListener('click', () => abrirForm());
 $('#sel-ano').addEventListener('change', e => { periodo.ano = +e.target.value; render(); });
 $('#sel-mes').addEventListener('change', e => { periodo.mes = +e.target.value; render(); });
 document.addEventListener('keydown', e => {
-  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'n' && !dlg.open && !dlgFixa.open) { e.preventDefault(); abrirForm(); }
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'n' && !algumDialogoAberto()) { e.preventDefault(); abrirForm(); }
 });
 
 // Lança as despesas fixas que chegaram ao dia, também com a app aberta durante dias.
@@ -1062,7 +1329,7 @@ function verificarFixas() {
   const n = gerarFixas();
   if (!n) return;
   aviso(`${n === 1 ? 'Lançado 1 movimento' : `Lançados ${n} movimentos`} de despesas fixas.`);
-  if (!dlg.open && !dlgFixa.open) render();
+  if (!algumDialogoAberto()) render();
 }
 setInterval(verificarFixas, 30 * 60 * 1000);
 window.addEventListener('focus', verificarFixas);
