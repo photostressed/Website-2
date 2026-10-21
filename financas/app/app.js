@@ -731,6 +731,12 @@ function renderPersonalizacao() {
       </div>
     </section>
 
+    <section class="painel" id="p-seguranca" hidden>
+      <h2>Segurança</h2>
+      <label class="interruptor"><input type="checkbox" id="p-touchid"><span>Pedir impressão digital (Touch ID) para abrir a app</span></label>
+      <p class="nota" id="p-touchid-nota" style="margin-top:.5rem"></p>
+    </section>
+
     <section class="painel">
       <h2>Categorias <small>muda o nome diretamente; os movimentos e despesas fixas acompanham</small></h2>
       <div class="cat-grelha">
@@ -741,6 +747,7 @@ function renderPersonalizacao() {
       </div>
     </section>`;
 
+  ligarTouchId();
   const mudar = (chave, valor) => { estado.personalizacao[chave] = valor; guardar(); aplicarAparencia(); };
   $('[data-pers="tema"]').addEventListener('change', e => mudar('tema', e.target.value));
   $('#p-nome').addEventListener('input', e => mudar('nome', e.target.value));
@@ -769,6 +776,27 @@ function renderPersonalizacao() {
     renderPersonalizacao();
     $(`.cat-nova[data-tipo="${tipo}"] input`).focus();
   }));
+}
+
+// Só existe na app de Mac (Electron); no browser a secção fica escondida.
+async function ligarTouchId() {
+  if (!window.appMac) return;
+  const { disponivel, ativo } = await window.appMac.estadoTouchId();
+  const cb = $('#p-touchid');
+  if (!cb) return;
+  $('#p-seguranca').hidden = false;
+  cb.checked = ativo;
+  cb.disabled = !disponivel && !ativo;
+  $('#p-touchid-nota').textContent = disponivel
+    ? 'Quando está ativo, também volta a pedir sempre que o Mac bloqueia ou adormece.'
+    : 'O Touch ID não está disponível neste momento (por exemplo, com a tampa fechada).';
+  cb.addEventListener('change', async () => {
+    cb.disabled = true;
+    const r = await window.appMac.definirTouchId(cb.checked);
+    cb.disabled = false;
+    if (!r.ok) { cb.checked = !cb.checked; alert(r.erro); return; }
+    aviso(cb.checked ? 'Bloqueio com impressão digital ativado.' : 'Bloqueio com impressão digital desativado.');
+  });
 }
 
 function acaoCategoria(acao, tipo, i) {

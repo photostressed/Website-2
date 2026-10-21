@@ -34,6 +34,17 @@ npm run mac        # cria Financas.app em dist/mac-arm64 (aparece como “Finan�
 Copia a `Financas.app` para a pasta Aplicações. Como não está assinada pela Apple, abre-a da primeira vez
 com **clique direito → Abrir**, ou autoriza em Definições do Sistema → Privacidade e Segurança.
 
+## Bloqueio com impressão digital (Touch ID)
+
+Em *Personalização → Segurança* ativa **Pedir impressão digital para abrir a app**. A partir daí a app pede
+o Touch ID ao abrir e volta a pedir sempre que o Mac bloqueia ou adormece.
+
+Se algum dia ficares sem Touch ID (por exemplo, MacBook fechado com teclado externo), desativa o bloqueio no Terminal:
+
+```bash
+rm ~/Library/Application\ Support/Financas/config.json
+```
+
 ## Onde ficam os dados
 
 Ficam só no teu Mac, sem servidores nem contas: em `~/Library/Application Support/Financas/` na app,

@@ -220,3 +220,5 @@ button:disabled{opacity:.35;cursor:default}
 
 /* Aviso */
 .aviso{position:fixed;bottom:1.2rem;left:50%;transform:translateX(-50%);z-index:60;background:var(--text);color:var(--bg);padding:.6rem 1rem;border-radius:9px;font-size:.85rem;box-shadow:0 8px 24px rgba(0,0,0,.2);max-width:calc(100vw - 32px)}
+.interruptor{display:flex;align-items:center;gap:.6rem;cursor:pointer;font-size:.9rem}
+.interruptor input{width:18px;height:18px;accent-color:var(--accent);cursor:pointer}
