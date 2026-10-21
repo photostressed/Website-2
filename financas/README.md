@@ -6,6 +6,7 @@ Pensada para trabalhador independente em Portugal (IVA, retenção de IRS e Segu
 ## O que faz
 
 - **Trabalhos**: cada pedido de cliente da fase *Pedido* até *Entregue*, marcado como **pago** ou **por pagar**. Ao marcar como pago, a entrada é criada sozinha em Movimentos. Trabalhos feitos há mais de 30 dias e por pagar aparecem em atraso.
+- **Clientes (CRM)**: ficha de cada cliente com contactos, NIF, notas e todos os trabalhos feitos (quais, quando e quanto), total pago e por receber. Os clientes são criados sozinhos quando registas um trabalho com um nome novo; nomes iguais (mesmo com acentos ou maiúsculas diferentes) ficam no mesmo cliente.
 - **Em conta / Por receber**: no topo do Resumo e dos Trabalhos, o dinheiro que já tens na conta, o que os clientes ainda te devem e o total. Define o saldo inicial da conta em Definições.
 - **Resumo**: recebido, despesas, impostos pagos e saldo do mês ou do ano. Inclui um gráfico mês a mês e as despesas por categoria.
 - **Reservar para impostos**: quanto IVA e Segurança Social ainda tens de pagar e quanto fica realmente livre.

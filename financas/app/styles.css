@@ -253,3 +253,15 @@ select.fase{padding:.25rem .4rem;font-size:.8rem}
   .dinheiro>*{border-right:0;border-bottom:1px solid var(--border)}
   .dinheiro>*:last-child{border-bottom:0}
 }
+
+/* Clientes */
+.link-cliente{border:0;background:none;padding:0;font:inherit;color:var(--text);text-decoration:underline;text-decoration-color:var(--border);text-underline-offset:3px;cursor:pointer;text-align:left}
+.link-cliente:hover{background:none;text-decoration-color:var(--accent)}
+table.clicavel tbody tr{cursor:pointer}
+.ficha{display:flex;flex-direction:column;gap:.7rem;font-size:.88rem}
+.ficha .rot{display:block;font-size:.72rem;color:var(--muted)}
+.ficha div{white-space:pre-wrap}
+#dlg-cliente textarea{min-height:4.5rem}
+.ficha{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:.8rem 1.2rem}
+.ficha .opc{grid-column:1/-1}
+.botoes .link-cliente{align-self:center;margin-right:.6rem}

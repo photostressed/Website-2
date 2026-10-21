@@ -11,7 +11,7 @@ const TIPOS = { entrada: 'Entrada', saida: 'Saída', imposto: 'Imposto' };
 const CATEGORIAS_IMPOSTO = ['IVA', 'Segurança Social', 'IRS', 'Outros impostos'];
 
 const VERSAO = 2;
-const VISTAS = { resumo: 'Resumo', trabalhos: 'Trabalhos', movimentos: 'Movimentos', fixas: 'Despesas fixas', impostos: 'Impostos', personalizacao: 'Personalização', definicoes: 'Definições' };
+const VISTAS = { resumo: 'Resumo', trabalhos: 'Trabalhos', clientes: 'Clientes', movimentos: 'Movimentos', fixas: 'Despesas fixas', impostos: 'Impostos', personalizacao: 'Personalização', definicoes: 'Definições' };
 const FASES = { pedido: 'Pedido', orcamento: 'Orçamento enviado', confirmado: 'Confirmado', feito: 'Feito', entregue: 'Entregue', cancelado: 'Cancelado' };
 // Fases em que o trabalho já está garantido e, se não estiver pago, o dinheiro é "por receber".
 const FASES_GARANTIDAS = ['confirmado', 'feito', 'entregue'];
@@ -35,6 +35,7 @@ const padrao = () => ({
   personalizacao: { nome: 'Finanças', tema: 'auto', cor: 'grafite', vistaInicial: 'ultima', periodoInicial: 'mes' },
   fixas: [],
   trabalhos: [],
+  clientes: [],
   movimentos: [],
 });
 
@@ -76,6 +77,7 @@ function carregar() {
 // Converte dados guardados ou importados para o formato atual.
 function lerDados(bruto) {
   const d = normalizar(bruto);
+  if (ligarClientes(d)) precisaGuardar = true;
   if (!(bruto.versao >= VERSAO)) {
     exemplosRemovidos += removerExemplos(d);
     precisaGuardar = true;
@@ -102,6 +104,9 @@ function normalizar(d) {
         fim: mesValido(f.fim) ? f.fim : '', retomada: mesValido(f.retomada) ? f.retomada : '',
         ativa: f.ativa !== false, iva: +f.iva || 0, irs: +f.irs || 0, geradas: Array.isArray(f.geradas) ? f.geradas : [],
       })),
+    clientes: (Array.isArray(d.clientes) ? d.clientes : [])
+      .filter(c => c && typeof c.nome === 'string' && c.nome.trim())
+      .map(c => ({ email: '', telefone: '', nif: '', morada: '', notas: '', ...c, id: c.id || novoId() })),
     trabalhos: (Array.isArray(d.trabalhos) ? d.trabalhos : [])
       .filter(t => t && t.cliente && Number.isFinite(+t.valor) && /^\d{4}-\d{2}-\d{2}$/.test(t.data))
       .map(t => ({
@@ -112,6 +117,38 @@ function normalizar(d) {
       .filter(m => m && TIPOS[m.tipo] && /^\d{4}-\d{2}-\d{2}$/.test(m.data) && Number.isFinite(+m.valor))
       .map(m => ({ ...m, valor: +m.valor, iva: +m.iva || 0, irs: +m.irs || 0, id: m.id || novoId() })),
   };
+}
+
+// ---------- Clientes (dados) ----------
+
+// Compara nomes ignorando maiúsculas, acentos e espaços a mais ("José  Silva" = "jose silva").
+const chaveNome = s => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+const contactoDe = c => (c ? c.email || c.telefone : '');
+
+// Devolve o cliente com este nome, criando-o se ainda não existir.
+function obterCliente(d, nome, contacto = '') {
+  let c = d.clientes.find(x => chaveNome(x.nome) === chaveNome(nome));
+  const novo = !c;
+  if (novo) {
+    c = { id: novoId(), criado: Date.now(), nome: nome.trim().replace(/\s+/g, ' '), email: '', telefone: '', nif: '', morada: '', notas: '' };
+    d.clientes.push(c);
+  }
+  if (contacto) {
+    if (contacto.includes('@')) { if (!c.email) c.email = contacto; }
+    else if (!c.telefone) c.telefone = contacto;
+  }
+  return { c, novo };
+}
+
+// Garante que todos os trabalhos têm ficha de cliente (cria as que faltam). Devolve true se mudou algo.
+function ligarClientes(d) {
+  let mudou = false;
+  for (const t of d.trabalhos) {
+    let c = t.clienteId && d.clientes.find(x => x.id === t.clienteId);
+    if (!c) { c = obterCliente(d, t.cliente, t.contacto).c; t.clienteId = c.id; mudou = true; }
+    t.cliente = c.nome;
+  }
+  return mudou;
 }
 
 // A versão 1 tinha um botão que criava movimentos de exemplo. São reconhecidos
@@ -285,7 +322,7 @@ function preencherPeriodo() {
   $('#sel-mes').innerHTML = `<option value="0"${periodo.mes === 0 ? ' selected' : ''}>Ano inteiro</option>` +
     MESES_LONGOS.map((n, i) => `<option value="${i + 1}"${periodo.mes === i + 1 ? ' selected' : ''}>${n}</option>`).join('');
   // O separador Impostos é sempre anual.
-  const semPeriodo = ['trabalhos', 'fixas', 'personalizacao', 'definicoes'].includes(vista);
+  const semPeriodo = ['trabalhos', 'clientes', 'fixas', 'personalizacao', 'definicoes'].includes(vista);
   $('#sel-mes').hidden = semPeriodo || vista === 'impostos';
   $('#sel-ano').hidden = semPeriodo;
 }
@@ -299,7 +336,7 @@ function render() {
   $('#titulo').textContent = VISTAS[vista];
   preencherPeriodo();
   esconderTooltip();
-  ({ resumo: renderResumo, trabalhos: renderTrabalhos, movimentos: renderMovimentos, fixas: renderFixas, impostos: renderImpostos, personalizacao: renderPersonalizacao, definicoes: renderDefinicoes }[vista])();
+  ({ resumo: renderResumo, trabalhos: renderTrabalhos, clientes: renderClientes, movimentos: renderMovimentos, fixas: renderFixas, impostos: renderImpostos, personalizacao: renderPersonalizacao, definicoes: renderDefinicoes }[vista])();
 }
 
 // ---------- Resumo ----------
@@ -307,6 +344,11 @@ function render() {
 function cartao(rotulo, valor, sub = '', classe = '') {
   return `<div class="cartao ${classe}"><div class="rot">${rotulo}</div>
     <div class="val${valor < 0 ? ' negativo' : ''}">${fmt(valor)}</div><div class="sub">${sub}</div></div>`;
+}
+
+// Cartão com um valor que não é dinheiro (contagens, datas).
+function cartaoTexto(rotulo, texto, sub = '', classe = '') {
+  return `<div class="cartao ${classe}"><div class="rot">${rotulo}</div><div class="val">${texto}</div><div class="sub">${sub}</div></div>`;
 }
 
 function linha(nome, valor, nota = '', classe = '') {
@@ -796,7 +838,7 @@ function atualizarTrabalhos() {
   const q = filtrosT.texto.trim().toLocaleLowerCase('pt');
   const lista = estado.trabalhos
     .filter(FILTROS_T[filtrosT.estado][1])
-    .filter(t => !q || [t.cliente, t.contacto, t.servico, t.descricao, t.notas].some(s => (s || '').toLocaleLowerCase('pt').includes(q)))
+    .filter(t => !q || [t.cliente, contactoDe(clienteDe(t)), t.servico, t.descricao, t.notas].some(s => (s || '').toLocaleLowerCase('pt').includes(q)))
     .sort((a, b) => b.data.localeCompare(a.data));
 
   if (!lista.length) {
@@ -810,7 +852,7 @@ function atualizarTrabalhos() {
     const atraso = emAtraso(t);
     return `<tr class="${t.fase === 'cancelado' ? 'inativa' : ''}">
       <td>${dataPt(t.data)}</td>
-      <td>${esc(t.cliente)}${t.contacto ? `<small>${esc(t.contacto)}</small>` : ''}</td>
+      <td><button class="link-cliente" data-acao="abrir-cliente" data-cliente="${t.clienteId}">${esc(t.cliente)}</button>${contactoDe(clienteDe(t)) ? `<small>${esc(contactoDe(clienteDe(t)))}</small>` : ''}</td>
       <td>${esc(t.servico)}${t.descricao ? `<small>${esc(t.descricao)}</small>` : ''}</td>
       <td><select class="fase" data-fase-t="${t.id}" aria-label="Fase">${Object.entries(FASES).map(([k, n]) => `<option value="${k}"${t.fase === k ? ' selected' : ''}>${n}</option>`).join('')}</select></td>
       <td class="num">${fmt(aReceber(t))}<small>${fmt(t.valor)} sem IVA</small></td>
@@ -850,15 +892,17 @@ function atualizarFormTrabalho() {
   }
 }
 
-function abrirFormTrabalho(t = null) {
+function abrirFormTrabalho(t = null, cliente = null) {
   formTrab.reset();
+  $('#lista-clientes').innerHTML = [...estado.clientes].sort((a, b) => a.nome.localeCompare(b.nome, 'pt'))
+    .map(c => `<option value="${esc(c.nome)}">`).join('');
   $('#trab-erro').hidden = true;
   trabalhoEmEdicao = t ? t.id : null;
   $('#trab-titulo').textContent = t ? 'Editar trabalho' : 'Novo trabalho';
   preencherCategorias(campoT('servico'), 'entrada', t?.servico);
   campoT('fase').innerHTML = Object.entries(FASES).map(([k, n]) => `<option value="${k}">${n}</option>`).join('');
-  campoT('cliente').value = t?.cliente || '';
-  campoT('contacto').value = t?.contacto || '';
+  campoT('cliente').value = t?.cliente || cliente?.nome || '';
+  campoT('contacto').value = contactoDe(t ? clienteDe(t) : cliente);
   campoT('descricao').value = t?.descricao || '';
   campoT('data').value = t?.data || hoje();
   campoT('fase').value = t?.fase || 'pedido';
@@ -869,9 +913,19 @@ function abrirFormTrabalho(t = null) {
   campoT('dataPagamento').value = t?.dataPagamento || hoje();
   campoT('notas').value = t?.notas || '';
   atualizarFormTrabalho();
+  atualizarClienteForm();
   dlgTrab.showModal();
-  campoT(t ? 'valor' : 'cliente').focus();
+  campoT(t || cliente ? 'valor' : 'cliente').focus();
 }
+
+// Ao escolher um cliente que já existe, mostra o contacto dele; indica se vai ser criado um novo.
+function atualizarClienteForm() {
+  const nome = campoT('cliente').value;
+  const c = estado.clientes.find(x => chaveNome(x.nome) === chaveNome(nome));
+  if (c && !campoT('contacto').value) campoT('contacto').value = contactoDe(c);
+  $('#trab-cliente-info').textContent = !nome.trim() ? '' : c ? `Cliente existente · ${plural(estado.trabalhos.filter(t => t.clienteId === c.id).length, 'trabalho', 'trabalhos')}` : 'Novo cliente: será criado ao guardar';
+}
+formTrab.elements.cliente.addEventListener('input', atualizarClienteForm);
 
 formTrab.addEventListener('input', atualizarFormTrabalho);
 formTrab.addEventListener('change', atualizarFormTrabalho);
@@ -900,6 +954,10 @@ formTrab.addEventListener('submit', e => {
     : dados.pago && !/^\d{4}-\d{2}-\d{2}$/.test(dados.dataPagamento) ? 'Indica a data do pagamento.' : '';
   if (erro) { $('#trab-erro').textContent = erro; $('#trab-erro').hidden = false; return; }
 
+  const { c, novo } = obterCliente(estado, dados.cliente, dados.contacto);
+  dados.clienteId = c.id;
+  dados.cliente = c.nome;
+  delete dados.contacto; // o contacto fica guardado na ficha do cliente
   let t;
   if (trabalhoEmEdicao) {
     t = estado.trabalhos.find(x => x.id === trabalhoEmEdicao);
@@ -912,9 +970,200 @@ formTrab.addEventListener('submit', e => {
   guardar();
   dlgTrab.close();
   render();
+  if (novo) aviso(`Novo cliente criado: ${c.nome}`);
 });
 
-const algumDialogoAberto = () => dlg.open || dlgFixa.open || dlgTrab.open;
+const algumDialogoAberto = () => dlg.open || dlgFixa.open || dlgTrab.open || dlgCliente.open;
+
+// ---------- Clientes (CRM) ----------
+
+const clienteDe = t => estado.clientes.find(c => c.id === t.clienteId);
+const filtrosC = { texto: '', ordem: 'recentes' };
+let clienteAberto = null;
+
+// Um trabalho "conta" para o cliente quando está garantido (confirmado, feito, entregue) ou já foi pago.
+const contaParaCliente = t => t.pago || FASES_GARANTIDAS.includes(t.fase);
+
+function resumoCliente(c) {
+  const todos = estado.trabalhos.filter(t => t.clienteId === c.id).sort((a, b) => b.data.localeCompare(a.data));
+  const feitos = todos.filter(contaParaCliente);
+  return {
+    todos, feitos,
+    total: feitos.reduce((s, t) => s + aReceber(t), 0),
+    pago: feitos.filter(t => t.pago).reduce((s, t) => s + aReceber(t), 0),
+    porReceber: feitos.filter(t => !t.pago).reduce((s, t) => s + aReceber(t), 0),
+    emAberto: todos.filter(t => ['pedido', 'orcamento'].includes(t.fase)).length,
+    ultimo: feitos[0]?.data || todos[0]?.data || '',
+    desde: todos.length ? todos[todos.length - 1].data : '',
+    servicos: [...new Set(feitos.map(t => t.servico))],
+  };
+}
+
+function renderClientes() {
+  if (clienteAberto && estado.clientes.some(c => c.id === clienteAberto)) { renderFichaCliente(); return; }
+  clienteAberto = null;
+  const resumos = estado.clientes.map(c => ({ c, r: resumoCliente(c) }));
+  const anoAtual = String(agora.getFullYear());
+  const ativosAno = resumos.filter(({ r }) => r.feitos.some(t => t.data.startsWith(anoAtual))).length;
+  const repetentes = resumos.filter(({ r }) => r.feitos.length > 1).length;
+  const top = [...resumos].sort((a, b) => b.r.total - a.r.total)[0];
+
+  $('#conteudo').innerHTML = `
+    <section class="cartoes">
+      ${cartaoTexto('Clientes', estado.clientes.length, `${ativosAno} com trabalhos em ${anoAtual}`)}
+      ${cartaoTexto('Clientes que repetiram', repetentes, 'mais de um trabalho')}
+      ${cartao('Valor médio por cliente', resumos.length ? resumos.reduce((s, { r }) => s + r.total, 0) / Math.max(1, resumos.filter(({ r }) => r.feitos.length).length) : 0, 'total ÷ clientes com trabalhos')}
+      ${cartao('Melhor cliente', top?.r.total || 0, top && top.r.total ? esc(top.c.nome) : '—', 'destaque')}
+    </section>
+    <section class="painel">
+      <div class="painel-topo"><h2>Clientes</h2>
+        <div class="botoes"><button data-acao="exportar-clientes">Exportar (.csv)</button><button class="primario" data-acao="novo-cliente">+ Novo cliente</button></div></div>
+      <div class="filtros">
+        <input type="search" id="c-texto" placeholder="Procurar nome, email, telefone, NIF…" value="${esc(filtrosC.texto)}">
+        <select id="c-ordem" aria-label="Ordenar">
+          <option value="recentes"${filtrosC.ordem === 'recentes' ? ' selected' : ''}>Trabalho mais recente</option>
+          <option value="valor"${filtrosC.ordem === 'valor' ? ' selected' : ''}>Maior valor</option>
+          <option value="nome"${filtrosC.ordem === 'nome' ? ' selected' : ''}>Nome (A–Z)</option>
+        </select>
+      </div>
+      <div id="lista-clientes-tab"></div>
+      <p class="nota" style="margin-top:.9rem">Os clientes são criados automaticamente quando registas um trabalho com um nome novo. O valor conta trabalhos confirmados, feitos, entregues ou pagos (o que entra na conta: com IVA, sem a retenção de IRS).</p>
+    </section>`;
+  $('#c-texto').addEventListener('input', e => { filtrosC.texto = e.target.value; atualizarClientes(); });
+  $('#c-ordem').addEventListener('change', e => { filtrosC.ordem = e.target.value; atualizarClientes(); });
+  atualizarClientes();
+}
+
+function atualizarClientes() {
+  const q = chaveNome(filtrosC.texto);
+  const ordem = {
+    recentes: (a, b) => b.r.ultimo.localeCompare(a.r.ultimo) || a.c.nome.localeCompare(b.c.nome, 'pt'),
+    valor: (a, b) => b.r.total - a.r.total,
+    nome: (a, b) => a.c.nome.localeCompare(b.c.nome, 'pt'),
+  }[filtrosC.ordem];
+  const lista = estado.clientes
+    .filter(c => !q || [c.nome, c.email, c.telefone, c.nif, c.notas].some(s => chaveNome(s).includes(q)))
+    .map(c => ({ c, r: resumoCliente(c) }))
+    .sort(ordem);
+  if (!lista.length) {
+    $('#lista-clientes-tab').innerHTML = vazio(estado.clientes.length ? 'Nenhum cliente encontrado.'
+      : 'Ainda não tens clientes. São criados sozinhos quando registas um trabalho, ou podes adicionar um agora.',
+      estado.clientes.length ? '' : '<button class="primario" data-acao="novo-trabalho">+ Novo trabalho</button><button data-acao="novo-cliente">+ Novo cliente</button>');
+    return;
+  }
+  $('#lista-clientes-tab').innerHTML = `<div class="tabela-wrap"><table class="clicavel">
+    <thead><tr><th>Cliente</th><th>Serviços</th><th class="num">Trabalhos</th><th>Último trabalho</th><th class="num">Total</th><th class="num">Por receber</th></tr></thead>
+    <tbody>${lista.map(({ c, r }) => `<tr data-acao="abrir-cliente" data-cliente="${c.id}">
+      <td><span class="link-cliente">${esc(c.nome)}</span>${contactoDe(c) ? `<small>${esc(contactoDe(c))}</small>` : ''}</td>
+      <td>${r.servicos.length ? esc(r.servicos.join(', ')) : '<span class="opc">—</span>'}${r.emAberto ? `<small>${plural(r.emAberto, 'pedido em aberto', 'pedidos em aberto')}</small>` : ''}</td>
+      <td class="num">${r.feitos.length}</td>
+      <td>${r.ultimo ? dataPt(r.ultimo) : '—'}</td>
+      <td class="num">${fmt(r.total)}</td>
+      <td class="num${r.porReceber ? ' atraso' : ''}">${r.porReceber ? fmt(r.porReceber) : '—'}</td>
+    </tr>`).join('')}</tbody></table></div>`;
+}
+
+function renderFichaCliente() {
+  const c = estado.clientes.find(x => x.id === clienteAberto);
+  const r = resumoCliente(c);
+  const dado = (rot, v) => v ? `<div><span class="rot">${rot}</span>${esc(v)}</div>` : '';
+  $('#titulo').textContent = c.nome;
+  $('#conteudo').innerHTML = `
+    <p style="margin:-.4rem 0 1rem"><button class="link" data-acao="ir" data-vista="clientes">← Todos os clientes</button></p>
+    <section class="cartoes">
+      ${cartao('Total em trabalhos', r.total, plural(r.feitos.length, 'trabalho', 'trabalhos'))}
+      ${cartao('Pago', r.pago, 'já recebido')}
+      ${cartao('Por receber', r.porReceber, r.porReceber ? 'ainda em dívida' : 'nada em dívida')}
+      ${cartaoTexto('Cliente desde', r.desde ? dataPt(r.desde) : '—', r.desde ? `último trabalho: ${dataPt(r.ultimo)}` : 'sem trabalhos', 'destaque')}
+    </section>
+      <section class="painel">
+        <div class="painel-topo"><h2>Dados do cliente</h2><button data-acao="editar-cliente" data-cliente="${c.id}">Editar</button></div>
+        <div class="ficha">
+          ${dado('Email', c.email)}${dado('Telefone', c.telefone)}${dado('NIF', c.nif)}${dado('Morada', c.morada)}${dado('Notas', c.notas)}
+          ${[c.email, c.telefone, c.nif, c.morada, c.notas].some(Boolean) ? '' : '<p class="opc">Sem dados de contacto. Carrega em Editar para os adicionar.</p>'}
+        </div>
+        <div class="botoes" style="margin-top:.9rem">
+          ${c.email ? `<a class="link-cliente" href="mailto:${esc(c.email)}">Enviar email</a>` : ''}
+          <button class="link perigo" data-acao="apagar-cliente" data-cliente="${c.id}">Apagar cliente</button>
+        </div>
+      </section>
+      <section class="painel">
+        <div class="painel-topo"><h2>Trabalhos <small>${plural(r.todos.length, 'registo', 'registos')}</small></h2>
+          <button class="primario" data-acao="novo-trabalho-cliente" data-cliente="${c.id}">+ Novo trabalho</button></div>
+        ${r.todos.length ? `<div class="tabela-wrap"><table>
+          <thead><tr><th>Data</th><th>Serviço</th><th>Fase</th><th class="num">Valor</th><th>Pagamento</th><th></th></tr></thead>
+          <tbody>${r.todos.map(t => `<tr class="${t.fase === 'cancelado' ? 'inativa' : ''}">
+            <td>${dataPt(t.data)}</td>
+            <td>${esc(t.servico)}${t.descricao ? `<small>${esc(t.descricao)}</small>` : ''}</td>
+            <td>${FASES[t.fase]}</td>
+            <td class="num">${fmt(aReceber(t))}<small>${fmt(t.valor)} sem IVA</small></td>
+            <td><button class="pagamento ${t.pago ? 'pago' : ''}" data-acao="pagar-trabalho" data-trabalho="${t.id}">${t.pago ? `✓ Pago <small>${dataPt(t.dataPagamento)}</small>` : 'Por pagar'}</button>
+              ${emAtraso(t) ? `<small class="atraso">há ${diasDesde(t.data)} dias</small>` : ''}</td>
+            <td class="acoes-l"><button class="link" data-acao="editar-trabalho" data-trabalho="${t.id}">Editar</button></td>
+          </tr>`).join('')}</tbody></table></div>` : vazio('Ainda sem trabalhos para este cliente.')}
+      </section>`;
+}
+
+const dlgCliente = $('#dlg-cliente');
+const formCliente = $('#form-cliente');
+let clienteEmEdicao = null;
+
+function abrirFormCliente(c = null) {
+  formCliente.reset();
+  $('#cli-erro').hidden = true;
+  clienteEmEdicao = c ? c.id : null;
+  $('#cli-titulo').textContent = c ? 'Editar cliente' : 'Novo cliente';
+  for (const k of ['nome', 'email', 'telefone', 'nif', 'morada', 'notas']) formCliente.elements[k].value = c?.[k] || '';
+  dlgCliente.showModal();
+  formCliente.elements.nome.focus();
+}
+
+$('#cli-cancelar').addEventListener('click', () => dlgCliente.close());
+formCliente.addEventListener('submit', e => {
+  e.preventDefault();
+  const dados = Object.fromEntries(['nome', 'email', 'telefone', 'nif', 'morada', 'notas'].map(k => [k, formCliente.elements[k].value.trim()]));
+  dados.nome = dados.nome.replace(/\s+/g, ' ');
+  const repetido = estado.clientes.find(x => x.id !== clienteEmEdicao && chaveNome(x.nome) === chaveNome(dados.nome));
+  const erro = !dados.nome ? 'Escreve o nome do cliente.' : repetido ? `Já existe o cliente “${repetido.nome}”.` : '';
+  if (erro) { $('#cli-erro').textContent = erro; $('#cli-erro').hidden = false; return; }
+
+  if (clienteEmEdicao) {
+    const c = estado.clientes.find(x => x.id === clienteEmEdicao);
+    Object.assign(c, dados);
+    // O nome aparece nos trabalhos e nas entradas dos trabalhos pagos.
+    for (const t of estado.trabalhos.filter(x => x.clienteId === c.id)) { t.cliente = c.nome; sincronizarMovimento(t); }
+  } else {
+    const c = { id: novoId(), criado: Date.now(), ...dados };
+    estado.clientes.push(c);
+    clienteAberto = c.id;
+    vista = 'clientes';
+  }
+  guardar();
+  dlgCliente.close();
+  render();
+});
+
+function apagarCliente(c) {
+  if (!c) return;
+  const n = estado.trabalhos.filter(t => t.clienteId === c.id).length;
+  if (n) { alert(`“${c.nome}” tem ${plural(n, 'trabalho', 'trabalhos')}. Apaga ou passa esses trabalhos para outro cliente antes de apagar a ficha.`); return; }
+  if (!confirm(`Apagar o cliente “${c.nome}”?`)) return;
+  estado.clientes = estado.clientes.filter(x => x.id !== c.id);
+  clienteAberto = null;
+  guardar();
+  render();
+}
+
+function exportarClientes() {
+  const celula = v => typeof v === 'number' ? v.toFixed(2).replace('.', ',') : `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const cab = ['Nome', 'Email', 'Telefone', 'NIF', 'Morada', 'Trabalhos', 'Total', 'Pago', 'Por receber', 'Cliente desde', 'Último trabalho', 'Notas'];
+  const linhas = estado.clientes.map(c => {
+    const r = resumoCliente(c);
+    return [c.nome, c.email, c.telefone, c.nif, c.morada, String(r.feitos.length), r.total, r.pago, r.porReceber,
+      r.desde ? dataPt(r.desde) : '', r.ultimo ? dataPt(r.ultimo) : '', c.notas].map(celula).join(';');
+  });
+  descarregar(`clientes-${hoje()}.csv`, '﻿' + [cab.map(celula).join(';'), ...linhas].join('\r\n'), 'text/csv;charset=utf-8');
+}
 
 // ---------- Personalização ----------
 
@@ -963,7 +1212,7 @@ function renderPersonalizacao() {
         <label>Ao abrir, mostrar
           <select id="p-vista">
             <option value="ultima"${p.vistaInicial === 'ultima' ? ' selected' : ''}>O último separador usado</option>
-            ${['resumo', 'trabalhos', 'movimentos', 'fixas', 'impostos'].map(v => `<option value="${v}"${p.vistaInicial === v ? ' selected' : ''}>${VISTAS[v]}</option>`).join('')}
+            ${['resumo', 'trabalhos', 'clientes', 'movimentos', 'fixas', 'impostos'].map(v => `<option value="${v}"${p.vistaInicial === v ? ' selected' : ''}>${VISTAS[v]}</option>`).join('')}
           </select></label>
         <label>Período ao abrir
           <select id="p-periodo">
@@ -1143,7 +1392,7 @@ $('#ficheiro').addEventListener('change', async e => {
     alert('Este ficheiro não parece ser uma cópia de segurança válida.');
     return;
   }
-  if (!confirm(`Importar ${dados.movimentos.length} movimentos e ${dados.fixas.length} despesas fixas? Os dados atuais serão substituídos.`)) return;
+  if (!confirm(`Importar ${dados.movimentos.length} movimentos, ${dados.trabalhos.length} trabalhos, ${dados.clientes.length} clientes e ${dados.fixas.length} despesas fixas? Os dados atuais serão substituídos.`)) return;
   estado = dados;
   guardar();
   gerarFixas();
@@ -1247,8 +1496,9 @@ form.addEventListener('submit', e => {
 
 // ---------- Eventos globais ----------
 
-function irPara(v) {
+function irPara(v, cliente = null) {
   vista = v;
+  clienteAberto = cliente;
   guardarUI();
   render();
 }
@@ -1259,6 +1509,7 @@ document.addEventListener('click', e => {
   const m = b.dataset.id && estado.movimentos.find(x => x.id === b.dataset.id);
   const f = b.dataset.fixa && estado.fixas.find(x => x.id === b.dataset.fixa);
   const tr = b.dataset.trabalho && estado.trabalhos.find(x => x.id === b.dataset.trabalho);
+  const cl = b.dataset.cliente && estado.clientes.find(x => x.id === b.dataset.cliente);
   switch (b.dataset.acao) {
     case 'novo': abrirForm(); break;
     case 'editar': abrirForm(m); break;
@@ -1272,6 +1523,12 @@ document.addEventListener('click', e => {
       }
       break;
     case 'novo-trabalho': abrirFormTrabalho(); break;
+    case 'novo-trabalho-cliente': abrirFormTrabalho(null, cl); break;
+    case 'abrir-cliente': irPara('clientes', b.dataset.cliente); break;
+    case 'novo-cliente': abrirFormCliente(); break;
+    case 'editar-cliente': abrirFormCliente(cl); break;
+    case 'apagar-cliente': apagarCliente(cl); break;
+    case 'exportar-clientes': exportarClientes(); break;
     case 'editar-trabalho': abrirFormTrabalho(tr); break;
     case 'pagar-trabalho': alternarPago(tr); break;
     case 'apagar-trabalho': apagarTrabalho(tr); break;
@@ -1303,10 +1560,11 @@ document.addEventListener('click', e => {
     case 'importar-json': $('#ficheiro').click(); break;
     case 'exportar-csv': exportarCSV(); break;
     case 'apagar-tudo':
-      if (confirm('Apagar TODOS os movimentos, trabalhos e despesas fixas? Isto não pode ser desfeito. Exporta uma cópia antes, se quiseres.')) {
+      if (confirm('Apagar TODOS os movimentos, trabalhos, clientes e despesas fixas? Isto não pode ser desfeito. Exporta uma cópia antes, se quiseres.')) {
         estado.movimentos = [];
         estado.fixas = [];
         estado.trabalhos = [];
+        estado.clientes = [];
         guardar(); render();
       }
       break;
