@@ -10,13 +10,27 @@ const TIPOS = { entrada: 'Entrada', saida: 'Saída', imposto: 'Imposto' };
 // As categorias de imposto são fixas porque os cálculos dependem delas.
 const CATEGORIAS_IMPOSTO = ['IVA', 'Segurança Social', 'IRS', 'Outros impostos'];
 
+const VERSAO = 2;
+const VISTAS = { resumo: 'Resumo', movimentos: 'Movimentos', fixas: 'Despesas fixas', impostos: 'Impostos', personalizacao: 'Personalização', definicoes: 'Definições' };
+// Cores de destaque: [cor, texto sobre a cor] para modo claro e escuro.
+const CORES = {
+  grafite: { nome: 'Grafite', claro: ['#0b0b0b', '#fcfcfb'], escuro: ['#f0efec', '#121211'] },
+  dourado: { nome: 'Dourado', claro: ['#86682f', '#ffffff'], escuro: ['#c9a96e', '#121211'] },
+  azul: { nome: 'Azul', claro: ['#2563c9', '#ffffff'], escuro: ['#5b9cf0', '#0d1420'] },
+  verde: { nome: 'Verde', claro: ['#1d7a4f', '#ffffff'], escuro: ['#4cbf86', '#0d1a13'] },
+  bordeaux: { nome: 'Bordeaux', claro: ['#8e2b3f', '#ffffff'], escuro: ['#e07a8f', '#1a0d10'] },
+  violeta: { nome: 'Violeta', claro: ['#5b46c9', '#ffffff'], escuro: ['#9a8af0', '#120f22'] },
+};
+
 const padrao = () => ({
-  versao: 1,
+  versao: VERSAO,
   definicoes: { iva: 23, irs: 23, ssTaxa: 21.4, ssBase: 70 },
   categorias: {
     entrada: ['Fotografia', 'Vídeo', 'Edição', 'Outros rendimentos'],
     saida: ['Casa', 'Contas da casa', 'Comida', 'Transporte', 'Saúde', 'Equipamento', 'Software e serviços', 'Lazer', 'Outros'],
   },
+  personalizacao: { nome: 'Finanças', tema: 'auto', cor: 'grafite', vistaInicial: 'ultima', periodoInicial: 'mes' },
+  fixas: [],
   movimentos: [],
 });
 
@@ -31,15 +45,22 @@ const novoId = () => Date.now().toString(36) + Math.random().toString(36).slice(
 const doisDig = n => String(n).padStart(2, '0');
 const hoje = () => { const d = new Date(); return `${d.getFullYear()}-${doisDig(d.getMonth() + 1)}-${doisDig(d.getDate())}`; };
 const dataPt = iso => { const [a, m, d] = iso.split('-'); return `${d}/${m}/${a}`; };
+const mesChave = d => `${d.getFullYear()}-${doisDig(d.getMonth() + 1)}`;
+const mesPt = chave => { const [a, m] = chave.split('-'); return `${MESES[+m - 1]} ${a}`; };
+const diasNoMes = (a, m) => new Date(a, m, 0).getDate();
+const proximoMes = chave => { let [a, m] = chave.split('-').map(Number); if (++m > 12) { m = 1; a++; } return `${a}-${doisDig(m)}`; };
 
 // ---------- Dados ----------
+
+let precisaGuardar = false;
+let exemplosRemovidos = 0;
 
 function carregar() {
   let texto = null;
   try { texto = localStorage.getItem(CHAVE_DADOS); } catch { return padrao(); }
   if (!texto) return padrao();
   try {
-    return normalizar(JSON.parse(texto));
+    return lerDados(JSON.parse(texto));
   } catch {
     // Guarda o conteúdo ilegível à parte para não o perder ao gravar por cima.
     try { localStorage.setItem(CHAVE_DADOS + '.ilegivel.' + Date.now(), texto); } catch {}
@@ -47,20 +68,56 @@ function carregar() {
   }
 }
 
+// Converte dados guardados ou importados para o formato atual.
+function lerDados(bruto) {
+  const d = normalizar(bruto);
+  if (!(bruto.versao >= VERSAO)) {
+    exemplosRemovidos += removerExemplos(d);
+    precisaGuardar = true;
+  }
+  return d;
+}
+
 function normalizar(d) {
   const p = padrao();
   const cat = d.categorias || {};
+  const mesValido = s => typeof s === 'string' && /^\d{4}-\d{2}$/.test(s);
   return {
-    versao: 1,
+    versao: VERSAO,
     definicoes: { ...p.definicoes, ...(d.definicoes || {}) },
     categorias: {
       entrada: Array.isArray(cat.entrada) && cat.entrada.length ? cat.entrada : p.categorias.entrada,
       saida: Array.isArray(cat.saida) && cat.saida.length ? cat.saida : p.categorias.saida,
     },
+    personalizacao: { ...p.personalizacao, ...(d.personalizacao || {}) },
+    fixas: (Array.isArray(d.fixas) ? d.fixas : [])
+      .filter(f => f && TIPOS[f.tipo] && mesValido(f.inicio) && Number.isFinite(+f.valor))
+      .map(f => ({
+        ...f, id: f.id || novoId(), valor: +f.valor, dia: Math.min(31, Math.max(1, +f.dia || 1)),
+        fim: mesValido(f.fim) ? f.fim : '', retomada: mesValido(f.retomada) ? f.retomada : '',
+        ativa: f.ativa !== false, iva: +f.iva || 0, irs: +f.irs || 0, geradas: Array.isArray(f.geradas) ? f.geradas : [],
+      })),
     movimentos: (Array.isArray(d.movimentos) ? d.movimentos : [])
       .filter(m => m && TIPOS[m.tipo] && /^\d{4}-\d{2}-\d{2}$/.test(m.data) && Number.isFinite(+m.valor))
       .map(m => ({ ...m, valor: +m.valor, iva: +m.iva || 0, irs: +m.irs || 0, id: m.id || novoId() })),
   };
+}
+
+// A versão 1 tinha um botão que criava movimentos de exemplo. São reconhecidos
+// pela descrição e por terem sido criados todos no mesmo instante (em lote).
+const ASSINATURA_EXEMPLO = new Set([
+  'saida|Casa|Renda', 'saida|Contas da casa|Luz, água e internet', 'saida|Comida|Supermercado',
+  'saida|Software e serviços|Adobe Creative Cloud', 'saida|Transporte|Combustível', 'saida|Equipamento|Objetiva 35mm',
+  'entrada|Fotografia|Sessão de fotografia', 'entrada|Vídeo|Vídeo institucional', 'entrada|Fotografia|Casamento',
+  'imposto|Segurança Social|Contribuição mensal', 'imposto|IVA|Entrega de IVA do trimestre',
+]);
+
+function removerExemplos(d) {
+  const candidatos = d.movimentos.filter(m => !m.fixaId && ASSINATURA_EXEMPLO.has(`${m.tipo}|${m.categoria}|${m.descricao}`));
+  const emLote = m => candidatos.filter(o => Math.abs((o.criado || 0) - (m.criado || 0)) < 2000).length >= 10;
+  const remover = new Set(candidatos.filter(emLote).map(m => m.id));
+  d.movimentos = d.movimentos.filter(m => !remover.has(m.id));
+  return remover.size;
 }
 
 function guardar() {
@@ -76,11 +133,93 @@ function guardarUI() {
 }
 
 let estado = carregar();
-let vista = carregarUI().vista || 'resumo';
 const agora = new Date();
-const periodo = { ano: agora.getFullYear(), mes: agora.getMonth() + 1 }; // mes 0 = ano inteiro
+const inicial = estado.personalizacao;
+let vista = inicial.vistaInicial === 'ultima' ? carregarUI().vista : inicial.vistaInicial;
+if (!VISTAS[vista]) vista = 'resumo';
+// mes 0 = ano inteiro
+const periodo = { ano: agora.getFullYear(), mes: inicial.periodoInicial === 'ano' ? 0 : agora.getMonth() + 1 };
 const filtros = { texto: '', tipo: '' };
 let idEmEdicao = null;
+let fixaEmEdicao = null;
+
+// ---------- Despesas fixas ----------
+
+// Primeiro mês a considerar: o início ou, se foi pausada e retomada, o mês em que foi retomada.
+const inicioEfetivo = f => (f.retomada && f.retomada > f.inicio ? f.retomada : f.inicio);
+
+// Meses em falta até hoje (inclui o mês atual só quando o dia já chegou).
+function mesesPendentes(f, ref = new Date()) {
+  const atual = mesChave(ref);
+  const pendentes = [];
+  if (!f.ativa) return pendentes;
+  for (let k = inicioEfetivo(f); k <= atual && (!f.fim || k <= f.fim); k = proximoMes(k)) {
+    if (f.geradas.includes(k)) continue;
+    const [a, m] = k.split('-').map(Number);
+    const dia = Math.min(f.dia, diasNoMes(a, m));
+    if (k === atual && dia > ref.getDate()) continue;
+    pendentes.push({ k, data: `${k}-${doisDig(dia)}` });
+  }
+  return pendentes;
+}
+
+function gerarFixas() {
+  let novos = 0;
+  for (const f of estado.fixas) {
+    for (const { k, data } of mesesPendentes(f)) {
+      estado.movimentos.push({
+        id: novoId(), criado: Date.now(), fixaId: f.id, tipo: f.tipo, categoria: f.categoria, descricao: f.descricao,
+        valor: f.valor, data, iva: f.tipo === 'entrada' ? f.iva : 0, irs: f.tipo === 'entrada' ? f.irs : 0, notas: '',
+      });
+      f.geradas.push(k);
+      novos++;
+    }
+  }
+  if (novos) guardar();
+  return novos;
+}
+
+function proximoLancamento(f) {
+  if (!f.ativa) return null;
+  let k = inicioEfetivo(f);
+  const atual = mesChave(new Date());
+  if (k < atual) k = atual;
+  for (let i = 0; i < 24 && (!f.fim || k <= f.fim); i++, k = proximoMes(k)) {
+    if (f.geradas.includes(k)) continue;
+    const [a, m] = k.split('-').map(Number);
+    return `${k}-${doisDig(Math.min(f.dia, diasNoMes(a, m)))}`;
+  }
+  return null;
+}
+
+// ---------- Aparência ----------
+
+const mqEscuro = matchMedia('(prefers-color-scheme: dark)');
+
+function aplicarAparencia() {
+  const p = estado.personalizacao;
+  const root = document.documentElement;
+  if (p.tema === 'claro') root.dataset.theme = 'light';
+  else if (p.tema === 'escuro') root.dataset.theme = 'dark';
+  else delete root.dataset.theme;
+  const escuro = p.tema === 'escuro' || (p.tema === 'auto' && mqEscuro.matches);
+  const [cor, tinta] = (CORES[p.cor] || CORES.grafite)[escuro ? 'escuro' : 'claro'];
+  root.style.setProperty('--accent', cor);
+  root.style.setProperty('--accent-ink', tinta);
+  const nome = p.nome.trim() || 'Finanças';
+  $('.marca').textContent = nome;
+  document.title = nome;
+}
+mqEscuro.addEventListener('change', aplicarAparencia);
+
+let temporizadorAviso;
+function aviso(texto) {
+  const el = $('#aviso');
+  el.textContent = texto;
+  el.hidden = false;
+  clearTimeout(temporizadorAviso);
+  temporizadorAviso = setTimeout(() => { el.hidden = true; }, 6000);
+}
 
 // ---------- Cálculos ----------
 
@@ -125,8 +264,6 @@ function totais(lista) {
 
 // ---------- Moldura (navegação e período) ----------
 
-const TITULOS = { resumo: 'Resumo', movimentos: 'Movimentos', impostos: 'Impostos', definicoes: 'Definições' };
-
 function preencherPeriodo() {
   const anos = new Set([agora.getFullYear(), agora.getFullYear() + 1, periodo.ano]);
   estado.movimentos.forEach(m => anos.add(+m.data.slice(0, 4)));
@@ -135,8 +272,9 @@ function preencherPeriodo() {
   $('#sel-mes').innerHTML = `<option value="0"${periodo.mes === 0 ? ' selected' : ''}>Ano inteiro</option>` +
     MESES_LONGOS.map((n, i) => `<option value="${i + 1}"${periodo.mes === i + 1 ? ' selected' : ''}>${n}</option>`).join('');
   // O separador Impostos é sempre anual.
-  $('#sel-mes').hidden = vista === 'impostos' || vista === 'definicoes';
-  $('#sel-ano').hidden = vista === 'definicoes';
+  const semPeriodo = ['fixas', 'personalizacao', 'definicoes'].includes(vista);
+  $('#sel-mes').hidden = semPeriodo || vista === 'impostos';
+  $('#sel-ano').hidden = semPeriodo;
 }
 
 function nomePeriodo() {
@@ -145,10 +283,10 @@ function nomePeriodo() {
 
 function render() {
   $$('#nav button').forEach(b => b.classList.toggle('ativo', b.dataset.vista === vista));
-  $('#titulo').textContent = TITULOS[vista];
+  $('#titulo').textContent = VISTAS[vista];
   preencherPeriodo();
   esconderTooltip();
-  ({ resumo: renderResumo, movimentos: renderMovimentos, impostos: renderImpostos, definicoes: renderDefinicoes }[vista])();
+  ({ resumo: renderResumo, movimentos: renderMovimentos, fixas: renderFixas, impostos: renderImpostos, personalizacao: renderPersonalizacao, definicoes: renderDefinicoes }[vista])();
 }
 
 // ---------- Resumo ----------
@@ -163,9 +301,11 @@ function linha(nome, valor, nota = '', classe = '') {
     <span class="num${valor < 0 ? ' negativo' : ''}">${fmt(valor)}</span></div>`;
 }
 
-function vazio(texto, comExemplo = false) {
-  return `<div class="vazio">${texto}${comExemplo ? `<br><button data-acao="exemplo">Experimentar com dados de exemplo</button>` : ''}</div>`;
+function vazio(texto, botoes = '') {
+  return `<div class="vazio">${texto}${botoes ? `<div class="botoes">${botoes}</div>` : ''}</div>`;
 }
+
+const BOTOES_INICIO = '<button class="primario" data-acao="novo">+ Novo movimento</button><button data-acao="nova-fixa">+ Nova despesa fixa</button>';
 
 function renderResumo() {
   const lista = doPeriodo();
@@ -180,7 +320,7 @@ function renderResumo() {
       ${cartao('Saldo', t.saldo, 'recebido − despesas − impostos', 'destaque')}
     </section>
 
-    ${semDados ? `<section class="painel">${vazio('Ainda não tens movimentos registados.', true)}</section>` : ''}
+    ${semDados ? `<section class="painel">${vazio('Ainda não tens movimentos registados. Regista o primeiro, ou configura a renda, contas e subscrições como despesas fixas para serem lançadas sozinhas.', BOTOES_INICIO)}</section>` : ''}
 
     <div class="duas">
       <section class="painel">
@@ -309,7 +449,7 @@ function tabelaMovimentos(lista, comAcoes) {
     const ent = m.tipo === 'entrada';
     return `<tr>
       <td>${dataPt(m.data)}</td>
-      <td>${esc(m.descricao)}${m.notas ? `<small>${esc(m.notas)}</small>` : ''}</td>
+      <td>${esc(m.descricao)}${m.fixaId ? ' <span class="etiqueta" title="Lançada automaticamente como despesa fixa">fixa</span>' : ''}${m.notas ? `<small>${esc(m.notas)}</small>` : ''}</td>
       <td>${esc(m.categoria)}</td>
       <td><span class="tipo ${m.tipo}"><i></i>${TIPOS[m.tipo]}</span></td>
       ${comAcoes ? `<td class="num">${fmt(m.valor)}</td>
@@ -355,7 +495,7 @@ function atualizarLista() {
   const soma = lista.reduce((s, m) => s + valores(m).liquido, 0);
   $('#f-resumo').textContent = `${lista.length} movimento${lista.length === 1 ? '' : 's'} · ${soma >= 0 ? '+' : ''}${fmt(soma)}`;
   $('#lista-mov').innerHTML = lista.length ? tabelaMovimentos(lista, true)
-    : vazio(estado.movimentos.length ? `Sem movimentos em ${nomePeriodo()} com estes filtros.` : 'Ainda não tens movimentos registados.', !estado.movimentos.length);
+    : vazio(estado.movimentos.length ? `Sem movimentos em ${nomePeriodo()} com estes filtros.` : 'Ainda não tens movimentos registados.', estado.movimentos.length ? '' : BOTOES_INICIO);
 }
 
 // ---------- Impostos ----------
@@ -402,6 +542,249 @@ function renderImpostos() {
     </div>`;
 }
 
+// ---------- Despesas fixas (vista) ----------
+
+function renderFixas() {
+  const atual = mesChave(new Date());
+  const emVigor = f => f.ativa && (!f.fim || f.fim >= atual);
+  const porMes = tipo => estado.fixas.filter(f => emVigor(f) && f.tipo === tipo).reduce((s, f) => s + f.valor, 0);
+  const ordenadas = [...estado.fixas].sort((a, b) => (b.ativa - a.ativa) || a.dia - b.dia || a.descricao.localeCompare(b.descricao, 'pt'));
+
+  const linhas = ordenadas.map(f => {
+    const prox = proximoLancamento(f);
+    const terminou = f.fim && f.fim < atual;
+    const estadoF = !f.ativa ? 'Pausada' : terminou ? 'Terminada' : 'Ativa';
+    return `<tr class="${f.ativa && !terminou ? '' : 'inativa'}">
+      <td>${esc(f.descricao)}<small>${esc(f.categoria)}</small></td>
+      <td><span class="tipo ${f.tipo}"><i></i>${TIPOS[f.tipo]}</span></td>
+      <td class="num">${fmt(f.valor)}</td>
+      <td class="num">dia ${f.dia}</td>
+      <td>${mesPt(f.inicio)} – ${f.fim ? mesPt(f.fim) : 'sem fim'}</td>
+      <td>${prox ? dataPt(prox) : '—'}</td>
+      <td>${estadoF}</td>
+      <td class="acoes-l">
+        <button class="link" data-acao="editar-fixa" data-fixa="${f.id}">Editar</button>
+        <button class="link" data-acao="pausar-fixa" data-fixa="${f.id}">${f.ativa ? 'Pausar' : 'Retomar'}</button>
+        <button class="link perigo" data-acao="apagar-fixa" data-fixa="${f.id}">Apagar</button></td>
+    </tr>`;
+  }).join('');
+
+  $('#conteudo').innerHTML = `
+    <section class="cartoes">
+      ${cartao('Saídas fixas por mês', porMes('saida'), 'renda, contas, subscrições…')}
+      ${cartao('Impostos fixos por mês', porMes('imposto'), 'ex.: Segurança Social')}
+      ${cartao('Entradas fixas por mês', porMes('entrada'), 'valor sem IVA (ex.: avenças)')}
+      ${cartao('Compromisso mensal', porMes('saida') + porMes('imposto'), `${estado.fixas.filter(emVigor).length} ativas`, 'destaque')}
+    </section>
+    <section class="painel">
+      <div class="painel-topo"><h2>As tuas despesas fixas</h2><button class="primario" data-acao="nova-fixa">+ Nova despesa fixa</button></div>
+      ${estado.fixas.length ? `<div class="tabela-wrap"><table>
+        <thead><tr><th>Descrição</th><th>Tipo</th><th class="num">Valor</th><th class="num">Quando</th><th>Período</th><th>Próximo lançamento</th><th>Estado</th><th></th></tr></thead>
+        <tbody>${linhas}</tbody></table></div>`
+        : vazio('Ainda não tens despesas fixas. Adiciona a renda, as contas da casa e as subscrições: passam a ser lançadas sozinhas todos os meses.')}
+      <p class="nota" style="margin-top:.9rem">Cada despesa fixa é lançada automaticamente em Movimentos no dia do mês que escolheres (sempre que abres a app, ou enquanto está aberta). Se o mês tiver menos dias, é lançada no último dia. Podes editar ou apagar um lançamento sem afetar os seguintes; ao editar a despesa fixa, as alterações valem para os próximos meses.</p>
+    </section>`;
+}
+
+const dlgFixa = $('#dlg-fixa');
+const formFixa = $('#form-fixa');
+const campoFx = n => formFixa.elements[n];
+
+function lerFormFixa() {
+  const tipo = campoFx('tipo').value;
+  const ent = tipo === 'entrada';
+  return {
+    tipo,
+    descricao: campoFx('descricao').value.trim(),
+    categoria: campoFx('categoria').value,
+    valor: arred(parseFloat(campoFx('valor').value)),
+    dia: parseInt(campoFx('dia').value, 10),
+    inicio: campoFx('inicio').value,
+    fim: campoFx('fim').value,
+    iva: ent ? Math.max(0, parseFloat(campoFx('iva').value) || 0) : 0,
+    irs: ent ? Math.max(0, parseFloat(campoFx('irs').value) || 0) : 0,
+  };
+}
+
+function atualizarFormFixa() {
+  const f = lerFormFixa();
+  $$('.so-entrada', formFixa).forEach(el => { el.hidden = f.tipo !== 'entrada'; });
+  $('#fixa-lbl-valor').textContent = f.tipo === 'entrada' ? 'Valor sem IVA (€)' : 'Valor por mês (€)';
+  campoFx('descricao').placeholder = { saida: 'ex.: Renda', imposto: 'ex.: Segurança Social', entrada: 'ex.: Avença mensal' }[f.tipo];
+  let texto = '';
+  if (f.dia >= 1 && f.dia <= 31 && /^\d{4}-\d{2}$/.test(f.inicio)) {
+    texto = `Lançada todos os meses no dia <b>${f.dia}</b>, de ${mesPt(f.inicio)} ${f.fim ? `a ${mesPt(f.fim)}` : 'em diante'}.`;
+    if (!fixaEmEdicao) {
+      const n = mesesPendentes({ ...f, ativa: true, retomada: '', geradas: [] }).length;
+      if (n) texto += ` Ao guardar, ${n === 1 ? 'é lançado já 1 movimento' : `são lançados já ${n} movimentos`} (meses que já passaram).`;
+    }
+  }
+  $('#fixa-previa').innerHTML = texto;
+}
+
+function abrirFormFixa(f = null) {
+  formFixa.reset();
+  $('#fixa-erro').hidden = true;
+  fixaEmEdicao = f ? f.id : null;
+  $('#fixa-titulo').textContent = f ? 'Editar despesa fixa' : 'Nova despesa fixa';
+  const tipo = f?.tipo || 'saida';
+  campoFx('tipo').value = tipo;
+  preencherCategorias(campoFx('categoria'), tipo, f?.categoria);
+  campoFx('descricao').value = f?.descricao || '';
+  campoFx('valor').value = f?.valor ?? '';
+  campoFx('dia').value = f?.dia ?? Math.min(agora.getDate(), 28);
+  campoFx('inicio').value = f?.inicio || mesChave(agora);
+  campoFx('fim').value = f?.fim || '';
+  campoFx('iva').value = f?.tipo === 'entrada' ? f.iva : estado.definicoes.iva;
+  campoFx('irs').value = f?.tipo === 'entrada' ? f.irs : estado.definicoes.irs;
+  atualizarFormFixa();
+  dlgFixa.showModal();
+  campoFx(f ? 'valor' : 'descricao').focus();
+}
+
+formFixa.addEventListener('change', e => {
+  if (e.target.name === 'tipo') preencherCategorias(campoFx('categoria'), e.target.value);
+  atualizarFormFixa();
+});
+formFixa.addEventListener('input', atualizarFormFixa);
+$('#fixa-cancelar').addEventListener('click', () => dlgFixa.close());
+
+formFixa.addEventListener('submit', e => {
+  e.preventDefault();
+  const f = lerFormFixa();
+  const erro = !f.descricao ? 'Escreve uma descrição.'
+    : !(f.valor > 0) ? 'O valor tem de ser maior que zero.'
+    : !(f.dia >= 1 && f.dia <= 31) ? 'O dia tem de estar entre 1 e 31.'
+    : !/^\d{4}-\d{2}$/.test(f.inicio) ? 'Indica o mês em que começa.'
+    : f.fim && f.fim < f.inicio ? 'O mês em que termina tem de ser depois do início.' : '';
+  if (erro) { $('#fixa-erro').textContent = erro; $('#fixa-erro').hidden = false; return; }
+
+  if (fixaEmEdicao) {
+    const i = estado.fixas.findIndex(x => x.id === fixaEmEdicao);
+    estado.fixas[i] = { ...estado.fixas[i], ...f };
+  } else {
+    estado.fixas.push({ ...f, id: novoId(), ativa: true, retomada: '', geradas: [] });
+  }
+  guardar();
+  dlgFixa.close();
+  const n = gerarFixas();
+  if (n) aviso(`${n === 1 ? 'Lançado 1 movimento' : `Lançados ${n} movimentos`} de despesas fixas.`);
+  render();
+});
+
+// ---------- Personalização ----------
+
+function usoCategoria(tipo, nome) {
+  return estado.movimentos.filter(m => m.tipo === tipo && m.categoria === nome).length
+    + estado.fixas.filter(f => f.tipo === tipo && f.categoria === nome).length;
+}
+
+function editorCategorias(tipo, titulo) {
+  const itens = estado.categorias[tipo].map((c, i) => {
+    const uso = usoCategoria(tipo, c);
+    return `<li class="cat-item">
+      <input value="${esc(c)}" data-cat-tipo="${tipo}" data-cat-i="${i}" aria-label="Nome da categoria">
+      <span class="cat-uso">${uso ? `${uso} uso${uso === 1 ? '' : 's'}` : ''}</span>
+      <button class="link" data-acao="cat-subir" data-tipo="${tipo}" data-i="${i}" title="Subir"${i ? '' : ' disabled'}>↑</button>
+      <button class="link perigo" data-acao="cat-apagar" data-tipo="${tipo}" data-i="${i}" title="Apagar">Apagar</button>
+    </li>`;
+  }).join('');
+  return `<div><h3>${titulo}</h3><ul class="cat-lista">${itens}</ul>
+    <form class="cat-nova" data-tipo="${tipo}"><input placeholder="Nova categoria" aria-label="Nova categoria"><button>Adicionar</button></form></div>`;
+}
+
+function renderPersonalizacao() {
+  const p = estado.personalizacao;
+  const opcao = (grupo, valor, rotulo) => `<label><input type="radio" name="${grupo}" value="${valor}"${p[grupo] === valor ? ' checked' : ''}><span>${rotulo}</span></label>`;
+  $('#conteudo').innerHTML = `
+    <section class="painel">
+      <h2>Aparência</h2>
+      <div class="campos">
+        <div class="campo"><span class="rot-campo">Tema</span>
+          <div class="seg seg-3" data-pers="tema">${opcao('tema', 'auto', 'Automático')}${opcao('tema', 'claro', 'Claro')}${opcao('tema', 'escuro', 'Escuro')}</div>
+          <small>Automático segue o modo claro/escuro do Mac.</small></div>
+        <div class="campo"><span class="rot-campo">Cor de destaque</span>
+          <div class="cores">${Object.entries(CORES).map(([k, c]) => `
+            <button class="cor${p.cor === k ? ' ativa' : ''}" data-acao="cor" data-cor="${k}" title="${c.nome}" aria-label="${c.nome}" aria-pressed="${p.cor === k}"
+              style="--c-claro:${c.claro[0]};--c-escuro:${c.escuro[0]}"></button>`).join('')}</div>
+          <small>${CORES[p.cor]?.nome || ''} · usada nos botões principais e no menu.</small></div>
+      </div>
+    </section>
+
+    <section class="painel">
+      <h2>Geral</h2>
+      <div class="campos">
+        <label>Nome da app<input id="p-nome" maxlength="30" value="${esc(p.nome)}"><small>Aparece no topo do menu.</small></label>
+        <label>Ao abrir, mostrar
+          <select id="p-vista">
+            <option value="ultima"${p.vistaInicial === 'ultima' ? ' selected' : ''}>O último separador usado</option>
+            ${['resumo', 'movimentos', 'fixas', 'impostos'].map(v => `<option value="${v}"${p.vistaInicial === v ? ' selected' : ''}>${VISTAS[v]}</option>`).join('')}
+          </select></label>
+        <label>Período ao abrir
+          <select id="p-periodo">
+            <option value="mes"${p.periodoInicial === 'mes' ? ' selected' : ''}>Mês atual</option>
+            <option value="ano"${p.periodoInicial === 'ano' ? ' selected' : ''}>Ano inteiro</option>
+          </select></label>
+      </div>
+    </section>
+
+    <section class="painel">
+      <h2>Categorias <small>muda o nome diretamente; os movimentos e despesas fixas acompanham</small></h2>
+      <div class="cat-grelha">
+        ${editorCategorias('entrada', 'Entradas')}
+        ${editorCategorias('saida', 'Saídas')}
+        <div><h3>Impostos</h3><ul class="cat-lista">${CATEGORIAS_IMPOSTO.map(c => `<li class="cat-item"><span class="cat-fixa">${c}</span></li>`).join('')}</ul>
+          <p class="nota">Estas são fixas, porque são usadas nos cálculos de impostos.</p></div>
+      </div>
+    </section>`;
+
+  const mudar = (chave, valor) => { estado.personalizacao[chave] = valor; guardar(); aplicarAparencia(); };
+  $('[data-pers="tema"]').addEventListener('change', e => mudar('tema', e.target.value));
+  $('#p-nome').addEventListener('input', e => mudar('nome', e.target.value));
+  $('#p-nome').addEventListener('change', e => { if (!e.target.value.trim()) { e.target.value = 'Finanças'; mudar('nome', 'Finanças'); } });
+  $('#p-vista').addEventListener('change', e => mudar('vistaInicial', e.target.value));
+  $('#p-periodo').addEventListener('change', e => mudar('periodoInicial', e.target.value));
+
+  $$('[data-cat-i]').forEach(inp => inp.addEventListener('change', () => {
+    const tipo = inp.dataset.catTipo, i = +inp.dataset.catI;
+    const antigo = estado.categorias[tipo][i];
+    const novo = inp.value.trim();
+    if (!novo || novo === antigo) { inp.value = antigo; return; }
+    if (estado.categorias[tipo].includes(novo)) { alert(`Já existe a categoria “${novo}”.`); inp.value = antigo; return; }
+    estado.categorias[tipo][i] = novo;
+    for (const x of [...estado.movimentos, ...estado.fixas]) if (x.tipo === tipo && x.categoria === antigo) x.categoria = novo;
+    guardar();
+    renderPersonalizacao();
+  }));
+  $$('.cat-nova').forEach(f => f.addEventListener('submit', e => {
+    e.preventDefault();
+    const tipo = f.dataset.tipo, nome = f.elements[0].value.trim();
+    if (!nome) return;
+    if (estado.categorias[tipo].includes(nome)) { alert(`Já existe a categoria “${nome}”.`); return; }
+    estado.categorias[tipo].push(nome);
+    guardar();
+    renderPersonalizacao();
+    $(`.cat-nova[data-tipo="${tipo}"] input`).focus();
+  }));
+}
+
+function acaoCategoria(acao, tipo, i) {
+  const lista = estado.categorias[tipo];
+  if (acao === 'cat-subir' && i > 0) {
+    [lista[i - 1], lista[i]] = [lista[i], lista[i - 1]];
+  } else if (acao === 'cat-apagar') {
+    if (lista.length === 1) { alert('Tem de existir pelo menos uma categoria.'); return; }
+    const uso = usoCategoria(tipo, lista[i]);
+    const msg = uso
+      ? `Apagar a categoria “${lista[i]}”? Os ${uso} movimentos/despesas fixas que a usam mantêm-se, com este nome.`
+      : `Apagar a categoria “${lista[i]}”?`;
+    if (!confirm(msg)) return;
+    lista.splice(i, 1);
+  }
+  guardar();
+  renderPersonalizacao();
+}
+
 // ---------- Definições ----------
 
 function renderDefinicoes() {
@@ -416,15 +799,7 @@ function renderDefinicoes() {
         ${campo('ssTaxa', 'Taxa Segurança Social (%)', 'Trabalhador independente')}
         ${campo('ssBase', 'Base Segurança Social (%)', 'Parte do faturado considerada')}
       </div>
-    </section>
-
-    <section class="painel">
-      <h2>Categorias <small>uma por linha</small></h2>
-      <div class="campos">
-        <label>Entradas<textarea data-cat="entrada">${esc(estado.categorias.entrada.join('\n'))}</textarea></label>
-        <label>Saídas<textarea data-cat="saida">${esc(estado.categorias.saida.join('\n'))}</textarea></label>
-        <label>Impostos<textarea disabled>${CATEGORIAS_IMPOSTO.join('\n')}</textarea><small>Fixas, porque são usadas nos cálculos.</small></label>
-      </div>
+      <p class="nota" style="margin-top:.8rem">Categorias, cores e tema estão em <button class="link" data-acao="ir" data-vista="personalizacao">Personalização</button>.</p>
     </section>
 
     <section class="painel">
@@ -434,7 +809,6 @@ function renderDefinicoes() {
         <button data-acao="exportar-json">Exportar cópia de segurança (.json)</button>
         <button data-acao="importar-json">Importar cópia de segurança</button>
         <button data-acao="exportar-csv">Exportar para Excel/Numbers (.csv)</button>
-        <button data-acao="exemplo">Adicionar dados de exemplo</button>
         <button data-acao="apagar-tudo" class="perigo">Apagar todos os dados</button>
       </div>
     </section>`;
@@ -443,11 +817,6 @@ function renderDefinicoes() {
     const v = parseFloat(i.value);
     if (Number.isFinite(v) && v >= 0) { estado.definicoes[i.dataset.def] = v; guardar(); }
     else i.value = estado.definicoes[i.dataset.def];
-  }));
-  $$('[data-cat]').forEach(t => t.addEventListener('change', () => {
-    const lista = [...new Set(t.value.split('\n').map(s => s.trim()).filter(Boolean))];
-    if (lista.length) { estado.categorias[t.dataset.cat] = lista; guardar(); }
-    t.value = estado.categorias[t.dataset.cat].join('\n');
   }));
 }
 
@@ -464,10 +833,10 @@ function descarregar(nome, conteudo, tipo) {
 
 function exportarCSV() {
   const celula = v => typeof v === 'number' ? v.toFixed(2).replace('.', ',') : `"${String(v ?? '').replace(/"/g, '""')}"`;
-  const cab = ['Data', 'Tipo', 'Categoria', 'Descrição', 'Valor', 'IVA %', 'IVA', 'IRS %', 'IRS retido', 'Na conta', 'Notas'];
+  const cab = ['Data', 'Tipo', 'Categoria', 'Descrição', 'Valor', 'IVA %', 'IVA', 'IRS %', 'IRS retido', 'Na conta', 'Despesa fixa', 'Notas'];
   const linhas = ordenar(estado.movimentos).reverse().map(m => {
     const v = valores(m), ent = m.tipo === 'entrada';
-    return [dataPt(m.data), TIPOS[m.tipo], m.categoria, m.descricao, m.valor, ent ? m.iva : '', v.iva, ent ? m.irs : '', v.irs, v.liquido, m.notas || '']
+    return [dataPt(m.data), TIPOS[m.tipo], m.categoria, m.descricao, m.valor, ent ? m.iva : '', v.iva, ent ? m.irs : '', v.irs, v.liquido, m.fixaId ? 'sim' : '', m.notas || '']
       .map(celula).join(';');
   });
   // BOM + ponto e vírgula para o Excel/Numbers em português abrirem bem.
@@ -478,42 +847,22 @@ $('#ficheiro').addEventListener('change', async e => {
   const f = e.target.files[0];
   e.target.value = '';
   if (!f) return;
+  let dados;
   try {
-    const dados = normalizar(JSON.parse(await f.text()));
-    if (!confirm(`Importar ${dados.movimentos.length} movimentos? Os dados atuais (${estado.movimentos.length} movimentos) serão substituídos.`)) return;
-    estado = dados;
-    guardar();
-    render();
-  } catch (err) {
+    dados = lerDados(JSON.parse(await f.text()));
+  } catch {
     alert('Este ficheiro não parece ser uma cópia de segurança válida.');
+    return;
   }
+  if (!confirm(`Importar ${dados.movimentos.length} movimentos e ${dados.fixas.length} despesas fixas? Os dados atuais serão substituídos.`)) return;
+  estado = dados;
+  guardar();
+  gerarFixas();
+  aplicarAparencia();
+  render();
 });
 
-function adicionarExemplo() {
-  const ano = agora.getFullYear();
-  const ate = agora.getMonth() + 1;
-  const ex = [];
-  const add = (mes, dia, tipo, categoria, descricao, valor, extra = {}) =>
-    ex.push({ id: novoId(), criado: Date.now(), tipo, categoria, descricao, valor, data: `${ano}-${doisDig(mes)}-${doisDig(dia)}`,
-      iva: tipo === 'entrada' ? estado.definicoes.iva : 0, irs: tipo === 'entrada' ? estado.definicoes.irs : 0, notas: '', ...extra });
-  for (let m = 1; m <= ate; m++) {
-    add(m, 1, 'saida', 'Casa', 'Renda', 750);
-    add(m, 5, 'saida', 'Contas da casa', 'Luz, água e internet', 95 + (m % 3) * 12);
-    add(m, 8, 'saida', 'Comida', 'Supermercado', 260 + (m % 4) * 25);
-    add(m, 12, 'saida', 'Software e serviços', 'Adobe Creative Cloud', 66.42);
-    add(m, 18, 'saida', 'Transporte', 'Combustível', 70 + (m % 2) * 30);
-    add(m, 10, 'entrada', m % 2 ? 'Fotografia' : 'Vídeo', m % 2 ? 'Sessão de fotografia' : 'Vídeo institucional', 900 + (m % 5) * 280);
-    if (m % 3 === 0) add(m, 22, 'entrada', 'Fotografia', 'Casamento', 1800, { irs: 0, notas: 'Cliente particular, sem retenção' });
-    add(m, 20, 'imposto', 'Segurança Social', 'Contribuição mensal', 180);
-    if (m % 3 === 2) add(m, 15, 'imposto', 'IVA', 'Entrega de IVA do trimestre', 520);
-  }
-  add(Math.min(3, ate), 14, 'saida', 'Equipamento', 'Objetiva 35mm', 1290, { notas: 'Despesa profissional' });
-  estado.movimentos.push(...ex);
-  guardar();
-  render();
-}
-
-// ---------- Formulário ----------
+// ---------- Formulário de movimento ----------
 
 const dlg = $('#dlg');
 const form = $('#form');
@@ -523,10 +872,10 @@ function categoriasDe(tipo) {
   return tipo === 'imposto' ? CATEGORIAS_IMPOSTO : estado.categorias[tipo];
 }
 
-function preencherCategorias(tipo, atual) {
+function preencherCategorias(select, tipo, atual) {
   const lista = [...categoriasDe(tipo)];
   if (atual && !lista.includes(atual)) lista.push(atual); // categoria entretanto removida
-  campoF('categoria').innerHTML = lista.map(c => `<option${c === atual ? ' selected' : ''}>${esc(c)}</option>`).join('');
+  select.innerHTML = lista.map(c => `<option${c === atual ? ' selected' : ''}>${esc(c)}</option>`).join('');
 }
 
 function atualizarForm() {
@@ -551,7 +900,7 @@ function abrirForm(m = null, duplicar = false) {
   $('#dlg-titulo').textContent = idEmEdicao ? 'Editar movimento' : 'Novo movimento';
   const tipo = m?.tipo || 'entrada';
   campoF('tipo').value = tipo;
-  preencherCategorias(tipo, m?.categoria);
+  preencherCategorias(campoF('categoria'), tipo, m?.categoria);
   const dataPadrao = periodo.mes && !(periodo.ano === agora.getFullYear() && periodo.mes === agora.getMonth() + 1)
     ? `${periodo.ano}-${doisDig(periodo.mes)}-01` : hoje();
   campoF('data').value = m && !duplicar ? m.data : dataPadrao;
@@ -566,7 +915,7 @@ function abrirForm(m = null, duplicar = false) {
 }
 
 form.addEventListener('change', e => {
-  if (e.target.name === 'tipo') preencherCategorias(e.target.value);
+  if (e.target.name === 'tipo') preencherCategorias(campoF('categoria'), e.target.value);
   atualizarForm();
 });
 form.addEventListener('input', atualizarForm);
@@ -609,26 +958,57 @@ form.addEventListener('submit', e => {
 
 // ---------- Eventos globais ----------
 
+function irPara(v) {
+  vista = v;
+  guardarUI();
+  render();
+}
+
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-acao]');
   if (!b) return;
   const m = b.dataset.id && estado.movimentos.find(x => x.id === b.dataset.id);
+  const f = b.dataset.fixa && estado.fixas.find(x => x.id === b.dataset.fixa);
   switch (b.dataset.acao) {
+    case 'novo': abrirForm(); break;
     case 'editar': abrirForm(m); break;
     case 'duplicar': abrirForm(m, true); break;
     case 'apagar':
-      if (m && confirm(`Apagar “${m.descricao}” (${fmt(m.valor)})?`)) {
+      if (m && confirm(`Apagar “${m.descricao}” (${fmt(m.valor)})?${m.fixaId ? ' Não volta a ser lançado este mês.' : ''}`)) {
         estado.movimentos = estado.movimentos.filter(x => x.id !== m.id);
         guardar(); render();
       }
       break;
-    case 'exemplo': adicionarExemplo(); break;
+    case 'nova-fixa': abrirFormFixa(); break;
+    case 'editar-fixa': abrirFormFixa(f); break;
+    case 'pausar-fixa':
+      if (!f) break;
+      f.ativa = !f.ativa;
+      // Ao retomar, não lança os meses em que esteve pausada.
+      if (f.ativa) { f.retomada = mesChave(new Date()); gerarFixas(); }
+      guardar(); render();
+      break;
+    case 'apagar-fixa': {
+      if (!f || !confirm(`Apagar a despesa fixa “${f.descricao}”? Deixa de ser lançada.`)) break;
+      const lancados = estado.movimentos.filter(x => x.fixaId === f.id);
+      if (lancados.length && confirm(`Apagar também os ${lancados.length} movimentos já lançados por ela?\n\nOK = apagar · Cancelar = manter`)) {
+        estado.movimentos = estado.movimentos.filter(x => x.fixaId !== f.id);
+      }
+      estado.fixas = estado.fixas.filter(x => x.id !== f.id);
+      guardar(); render();
+      break;
+    }
+    case 'cor': estado.personalizacao.cor = b.dataset.cor; guardar(); aplicarAparencia(); renderPersonalizacao(); break;
+    case 'cat-subir':
+    case 'cat-apagar': acaoCategoria(b.dataset.acao, b.dataset.tipo, +b.dataset.i); break;
+    case 'ir': irPara(b.dataset.vista); break;
     case 'exportar-json': descarregar(`financas-copia-${hoje()}.json`, JSON.stringify(estado, null, 2), 'application/json'); break;
     case 'importar-json': $('#ficheiro').click(); break;
     case 'exportar-csv': exportarCSV(); break;
     case 'apagar-tudo':
-      if (confirm('Apagar TODOS os movimentos? Isto não pode ser desfeito. Exporta uma cópia antes, se quiseres.')) {
+      if (confirm('Apagar TODOS os movimentos e despesas fixas? Isto não pode ser desfeito. Exporta uma cópia antes, se quiseres.')) {
         estado.movimentos = [];
+        estado.fixas = [];
         guardar(); render();
       }
       break;
@@ -637,17 +1017,29 @@ document.addEventListener('click', e => {
 
 $('#nav').addEventListener('click', e => {
   const b = e.target.closest('button[data-vista]');
-  if (!b) return;
-  vista = b.dataset.vista;
-  guardarUI();
-  render();
+  if (b) irPara(b.dataset.vista);
 });
 $('#btn-novo').addEventListener('click', () => abrirForm());
 $('#sel-ano').addEventListener('change', e => { periodo.ano = +e.target.value; render(); });
 $('#sel-mes').addEventListener('change', e => { periodo.mes = +e.target.value; render(); });
 document.addEventListener('keydown', e => {
-  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'n' && !dlg.open) { e.preventDefault(); abrirForm(); }
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'n' && !dlg.open && !dlgFixa.open) { e.preventDefault(); abrirForm(); }
 });
 
+// Lança as despesas fixas que chegaram ao dia, também com a app aberta durante dias.
+function verificarFixas() {
+  const n = gerarFixas();
+  if (!n) return;
+  aviso(`${n === 1 ? 'Lançado 1 movimento' : `Lançados ${n} movimentos`} de despesas fixas.`);
+  if (!dlg.open && !dlgFixa.open) render();
+}
+setInterval(verificarFixas, 30 * 60 * 1000);
+window.addEventListener('focus', verificarFixas);
+
 if (navigator.userAgent.includes('Electron')) document.body.classList.add('electron');
+aplicarAparencia();
+if (precisaGuardar) guardar();
+const lancadosAoAbrir = gerarFixas();
 render();
+if (exemplosRemovidos) aviso(`Removidos ${exemplosRemovidos} movimentos de exemplo.`);
+else if (lancadosAoAbrir) aviso(`${lancadosAoAbrir === 1 ? 'Lançado 1 movimento' : `Lançados ${lancadosAoAbrir} movimentos`} de despesas fixas.`);

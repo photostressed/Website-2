@@ -14,7 +14,9 @@
     <nav id="nav">
       <button data-vista="resumo">Resumo</button>
       <button data-vista="movimentos">Movimentos</button>
+      <button data-vista="fixas">Despesas fixas</button>
       <button data-vista="impostos">Impostos</button>
+      <button data-vista="personalizacao">Personalização</button>
       <button data-vista="definicoes">Definições</button>
     </nav>
     <button id="btn-novo" class="primario" title="Novo movimento (⌘N)">+ Novo movimento</button>
@@ -58,7 +60,35 @@
   </form>
 </dialog>
 
+<dialog id="dlg-fixa">
+  <form id="form-fixa" novalidate>
+    <h2 id="fixa-titulo">Nova despesa fixa</h2>
+    <div class="seg" role="radiogroup" aria-label="Tipo">
+      <label><input type="radio" name="tipo" value="saida" checked><span>Saída</span></label>
+      <label><input type="radio" name="tipo" value="imposto"><span>Imposto</span></label>
+      <label><input type="radio" name="tipo" value="entrada"><span>Entrada</span></label>
+    </div>
+    <div class="grelha">
+      <label class="larga">Descrição<input name="descricao" autocomplete="off" required></label>
+      <label>Categoria<select name="categoria"></select></label>
+      <label><span id="fixa-lbl-valor">Valor por mês (€)</span><input name="valor" type="number" step="0.01" min="0" inputmode="decimal" required></label>
+      <label>Dia do mês<input name="dia" type="number" min="1" max="31" step="1" required></label>
+      <label class="so-entrada">IVA (%)<input name="iva" type="number" step="0.1" min="0"></label>
+      <label class="so-entrada">Retenção IRS (%)<input name="irs" type="number" step="0.1" min="0"></label>
+      <label>Começa em<input name="inicio" type="month" required></label>
+      <label>Termina em (opcional)<input name="fim" type="month"></label>
+    </div>
+    <p id="fixa-previa" class="previa"></p>
+    <p id="fixa-erro" class="erro" hidden></p>
+    <div class="acoes">
+      <button type="button" id="fixa-cancelar">Cancelar</button>
+      <button type="submit" class="primario">Guardar</button>
+    </div>
+  </form>
+</dialog>
+
 <div id="tooltip" class="tooltip" hidden></div>
+<div id="aviso" class="aviso" role="status" hidden></div>
 <input type="file" id="ficheiro" accept="application/json,.json" hidden>
 <script src="app.js"></script>
 </body>

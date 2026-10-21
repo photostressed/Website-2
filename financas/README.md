@@ -8,8 +8,10 @@ Pensada para trabalhador independente em Portugal (IVA, retenção de IRS e Segu
 - **Resumo**: recebido, despesas, impostos pagos e saldo do mês ou do ano. Inclui um gráfico mês a mês e as despesas por categoria.
 - **Reservar para impostos**: quanto IVA e Segurança Social ainda tens de pagar e quanto fica realmente livre.
 - **Movimentos**: lista com pesquisa e filtro por tipo, para editar, duplicar ou apagar.
+- **Despesas fixas**: renda, contas e subscrições lançadas sozinhas todos os meses no dia escolhido (podem ter fim, ser pausadas e retomadas).
 - **Impostos**: tabela anual mês a mês e IVA por trimestre.
-- **Definições**: taxas por omissão (IVA, IRS, SS), categorias, cópia de segurança (.json) e exportação para Excel/Numbers (.csv).
+- **Personalização**: tema claro/escuro, cor de destaque, nome da app, o que mostrar ao abrir e categorias (mudar nome, ordenar, criar, apagar).
+- **Definições**: taxas por omissão (IVA, IRS, SS), cópia de segurança (.json) e exportação para Excel/Numbers (.csv).
 
 Numa **entrada** escreves o valor sem IVA. A app calcula o IVA, a retenção de IRS e quanto entra na conta.
 Numa **saída** ou num **imposto** escreves o valor total pago.
