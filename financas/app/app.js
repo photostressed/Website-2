@@ -258,7 +258,9 @@ function totais(lista) {
   t.ivaPorEntregar = Math.max(0, t.ivaCobrado - t.ivaPago);
   t.ssPorPagar = Math.max(0, t.ssEstimada - t.ssPago);
   t.saldo = t.recebido - t.despesas - t.impostos;
-  t.livre = t.saldo - t.ivaPorEntregar - t.ssPorPagar;
+  t.aPagar = t.ivaPorEntregar + t.ssPorPagar;
+  // O que fica realmente para ti: já descontados os impostos pagos e os que ainda estão por pagar.
+  t.livre = t.saldo - t.aPagar;
   return t;
 }
 
@@ -316,8 +318,8 @@ function renderResumo() {
     <section class="cartoes">
       ${cartao('Recebido', t.recebido, `Faturado ${fmt(t.faturado)} sem IVA`)}
       ${cartao('Despesas', t.despesas, `${lista.filter(m => m.tipo === 'saida').length} movimentos`)}
-      ${cartao('Impostos pagos', t.impostos, 'IVA, Segurança Social, IRS')}
-      ${cartao('Saldo', t.saldo, 'recebido − despesas − impostos', 'destaque')}
+      ${cartao('Impostos a pagar', t.aPagar, `IVA ${fmt(t.ivaPorEntregar)} · SS ${fmt(t.ssPorPagar)} · já pagos ${fmt(t.impostos)}`)}
+      ${cartao('Saldo (fica para ti)', t.livre, 'recebido − despesas − impostos pagos e a pagar', 'destaque')}
     </section>
 
     ${semDados ? `<section class="painel">${vazio('Ainda não tens movimentos registados. Regista o primeiro, ou configura a renda, contas e subscrições como despesas fixas para serem lançadas sozinhas.', BOTOES_INICIO)}</section>` : ''}
@@ -328,12 +330,13 @@ function renderResumo() {
         ${graficoMensal(periodo.ano)}
       </section>
       <section class="painel">
-        <h2>Reservar para impostos <small>${nomePeriodo()}</small></h2>
+        <h2>Impostos a pagar <small>${nomePeriodo()}</small></h2>
         <div class="linhas">
           ${linha('IVA por entregar', t.ivaPorEntregar, `cobrado ${fmt(t.ivaCobrado)} − entregue ${fmt(t.ivaPago)}`)}
           ${linha('Segurança Social por pagar', t.ssPorPagar, `estimativa ${fmt(t.ssEstimada)} − paga ${fmt(t.ssPago)}`)}
+          ${linha('Total a pagar', t.aPagar, 'reserva este valor; não é teu', 'total')}
           ${linha('IRS já retido pelos clientes', t.irsRetido, 'adiantamento ao IRS anual (informativo)')}
-          ${linha('Livre depois de reservar impostos', t.livre, 'saldo − IVA − Segurança Social por pagar', 'total')}
+          ${linha('Saldo antes de impostos a pagar', t.saldo, 'recebido − despesas − impostos já pagos')}
         </div>
       </section>
     </div>
@@ -511,10 +514,10 @@ function renderImpostos() {
 
   $('#conteudo').innerHTML = `
     <section class="cartoes">
-      ${cartao('Faturado (sem IVA)', tAno.faturado, `em ${ano}`)}
+      ${cartao('Total a pagar', tAno.aPagar, `IVA + Segurança Social em ${ano}`, 'destaque')}
       ${cartao('IVA por entregar', tAno.ivaPorEntregar, `cobrado ${fmt(tAno.ivaCobrado)}`)}
       ${cartao('Segurança Social por pagar', tAno.ssPorPagar, `estimativa ${fmt(tAno.ssEstimada)}`)}
-      ${cartao('IRS retido pelos clientes', tAno.irsRetido, 'adiantamento ao IRS', 'destaque')}
+      ${cartao('IRS retido pelos clientes', tAno.irsRetido, `faturado ${fmt(tAno.faturado)} sem IVA`)}
     </section>
 
     <section class="painel">
