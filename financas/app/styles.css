@@ -224,7 +224,7 @@ button:disabled{opacity:.35;cursor:default}
 .interruptor input{width:18px;height:18px;accent-color:var(--accent);cursor:pointer}
 
 /* Dinheiro em conta / por receber */
-.dinheiro{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;background:var(--surface);border:1px solid var(--border);border-radius:12px;margin-bottom:.75rem;overflow:hidden}
+.dinheiro{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;background:var(--surface);border:1px solid var(--border);border-radius:12px;margin-bottom:.75rem;overflow:hidden}
 .dinheiro>*{display:flex;flex-direction:column;gap:.1rem;padding:.9rem 1.1rem;border:0;border-right:1px solid var(--border);border-radius:0;background:none;text-align:left;font:inherit;color:inherit}
 .dinheiro>*:last-child{border-right:0}
 .dinheiro button{cursor:pointer}
@@ -265,3 +265,9 @@ table.clicavel tbody tr{cursor:pointer}
 .ficha{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:.8rem 1.2rem}
 .ficha .opc{grid-column:1/-1}
 .botoes .link-cliente{align-self:center;margin-right:.6rem}
+
+/* Fornecedores e pagamentos por pagar */
+tr.pendente td{color:var(--text-2)}
+.etiqueta.pendente{border-color:var(--negativo);color:var(--negativo)}
+#dlg-fornecedor textarea{min-height:4.5rem}
+@media (min-width: 641px) and (max-width: 900px){ .dinheiro{grid-template-columns:repeat(2,minmax(0,1fr))} }

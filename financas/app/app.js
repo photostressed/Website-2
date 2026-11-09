@@ -10,8 +10,8 @@ const TIPOS = { entrada: 'Entrada', saida: 'Saída', imposto: 'Imposto' };
 // As categorias de imposto são fixas porque os cálculos dependem delas.
 const CATEGORIAS_IMPOSTO = ['IVA', 'Segurança Social', 'IRS', 'Outros impostos'];
 
-const VERSAO = 2;
-const VISTAS = { resumo: 'Resumo', trabalhos: 'Trabalhos', clientes: 'Clientes', movimentos: 'Movimentos', fixas: 'Despesas fixas', impostos: 'Impostos', personalizacao: 'Personalização', definicoes: 'Definições' };
+const VERSAO = 3;
+const VISTAS = { resumo: 'Resumo', trabalhos: 'Trabalhos', clientes: 'Clientes', fornecedores: 'Fornecedores', movimentos: 'Movimentos', fixas: 'Despesas fixas', impostos: 'Impostos', personalizacao: 'Personalização', definicoes: 'Definições' };
 const FASES = { pedido: 'Pedido', orcamento: 'Orçamento enviado', confirmado: 'Confirmado', feito: 'Feito', entregue: 'Entregue', cancelado: 'Cancelado' };
 // Fases em que o trabalho já está garantido e, se não estiver pago, o dinheiro é "por receber".
 const FASES_GARANTIDAS = ['confirmado', 'feito', 'entregue'];
@@ -30,12 +30,13 @@ const padrao = () => ({
   definicoes: { iva: 23, irs: 23, ssTaxa: 21.4, ssBase: 70, saldoInicial: 0 },
   categorias: {
     entrada: ['Fotografia', 'Vídeo', 'Edição', 'Outros rendimentos'],
-    saida: ['Casa', 'Contas da casa', 'Comida', 'Transporte', 'Saúde', 'Equipamento', 'Software e serviços', 'Lazer', 'Outros'],
+    saida: ['Casa', 'Contas da casa', 'Comida', 'Transporte', 'Saúde', 'Equipamento', 'Fornecedores', 'Software e serviços', 'Lazer', 'Outros'],
   },
   personalizacao: { nome: 'Finanças', tema: 'auto', cor: 'grafite', vistaInicial: 'ultima', periodoInicial: 'mes' },
   fixas: [],
   trabalhos: [],
   clientes: [],
+  fornecedores: [],
   movimentos: [],
 });
 
@@ -78,8 +79,13 @@ function carregar() {
 function lerDados(bruto) {
   const d = normalizar(bruto);
   if (ligarClientes(d)) precisaGuardar = true;
-  if (!(bruto.versao >= VERSAO)) {
+  if (!(bruto.versao >= 2)) {
     exemplosRemovidos += removerExemplos(d);
+    precisaGuardar = true;
+  }
+  // Versão 3: categoria para pagamentos a fornecedores.
+  if (!(bruto.versao >= 3)) {
+    if (!d.categorias.saida.includes('Fornecedores')) d.categorias.saida.push('Fornecedores');
     precisaGuardar = true;
   }
   return d;
@@ -104,6 +110,9 @@ function normalizar(d) {
         fim: mesValido(f.fim) ? f.fim : '', retomada: mesValido(f.retomada) ? f.retomada : '',
         ativa: f.ativa !== false, iva: +f.iva || 0, irs: +f.irs || 0, geradas: Array.isArray(f.geradas) ? f.geradas : [],
       })),
+    fornecedores: (Array.isArray(d.fornecedores) ? d.fornecedores : [])
+      .filter(f => f && typeof f.nome === 'string' && f.nome.trim())
+      .map(f => ({ servico: '', email: '', telefone: '', nif: '', iban: '', notas: '', ...f, id: f.id || novoId() })),
     clientes: (Array.isArray(d.clientes) ? d.clientes : [])
       .filter(c => c && typeof c.nome === 'string' && c.nome.trim())
       .map(c => ({ email: '', telefone: '', nif: '', morada: '', notas: '', ...c, id: c.id || novoId() })),
@@ -115,7 +124,7 @@ function normalizar(d) {
       })),
     movimentos: (Array.isArray(d.movimentos) ? d.movimentos : [])
       .filter(m => m && TIPOS[m.tipo] && /^\d{4}-\d{2}-\d{2}$/.test(m.data) && Number.isFinite(+m.valor))
-      .map(m => ({ ...m, valor: +m.valor, iva: +m.iva || 0, irs: +m.irs || 0, id: m.id || novoId() })),
+      .map(m => ({ ...m, valor: +m.valor, iva: +m.iva || 0, irs: +m.irs || 0, id: m.id || novoId(), pendente: m.tipo === 'saida' && !!m.pendente })),
   };
 }
 
@@ -285,10 +294,14 @@ const noPeriodo = (m, ano, mes) => m.data.startsWith(String(ano)) && (!mes || +m
 const doPeriodo = () => estado.movimentos.filter(m => noPeriodo(m, periodo.ano, periodo.mes));
 const ordenar = lista => [...lista].sort((a, b) => b.data.localeCompare(a.data) || (b.criado || 0) - (a.criado || 0));
 
+// Pagamentos a fornecedores ainda por pagar não contam para os totais nem para o dinheiro em conta.
+const efetivo = m => !m.pendente;
+
 function totais(lista) {
   const d = estado.definicoes;
   const t = { faturado: 0, ivaCobrado: 0, irsRetido: 0, recebido: 0, despesas: 0, impostos: 0, ivaPago: 0, ssPago: 0, irsPago: 0, porCategoria: {} };
   for (const m of lista) {
+    if (!efetivo(m)) continue;
     const v = valores(m);
     if (m.tipo === 'entrada') {
       t.faturado += v.base; t.ivaCobrado += v.iva; t.irsRetido += v.irs; t.recebido += v.liquido;
@@ -322,7 +335,7 @@ function preencherPeriodo() {
   $('#sel-mes').innerHTML = `<option value="0"${periodo.mes === 0 ? ' selected' : ''}>Ano inteiro</option>` +
     MESES_LONGOS.map((n, i) => `<option value="${i + 1}"${periodo.mes === i + 1 ? ' selected' : ''}>${n}</option>`).join('');
   // O separador Impostos é sempre anual.
-  const semPeriodo = ['trabalhos', 'clientes', 'fixas', 'personalizacao', 'definicoes'].includes(vista);
+  const semPeriodo = ['trabalhos', 'clientes', 'fornecedores', 'fixas', 'personalizacao', 'definicoes'].includes(vista);
   $('#sel-mes').hidden = semPeriodo || vista === 'impostos';
   $('#sel-ano').hidden = semPeriodo;
 }
@@ -336,7 +349,7 @@ function render() {
   $('#titulo').textContent = VISTAS[vista];
   preencherPeriodo();
   esconderTooltip();
-  ({ resumo: renderResumo, trabalhos: renderTrabalhos, clientes: renderClientes, movimentos: renderMovimentos, fixas: renderFixas, impostos: renderImpostos, personalizacao: renderPersonalizacao, definicoes: renderDefinicoes }[vista])();
+  ({ resumo: renderResumo, trabalhos: renderTrabalhos, clientes: renderClientes, fornecedores: renderFornecedores, movimentos: renderMovimentos, fixas: renderFixas, impostos: renderImpostos, personalizacao: renderPersonalizacao, definicoes: renderDefinicoes }[vista])();
 }
 
 // ---------- Resumo ----------
@@ -371,7 +384,7 @@ function renderResumo() {
     ${faixaDinheiro()}
     <section class="cartoes">
       ${cartao('Recebido', t.recebido, `Faturado ${fmt(t.faturado)} sem IVA`)}
-      ${cartao('Despesas', t.despesas, plural(lista.filter(m => m.tipo === 'saida').length, 'movimento', 'movimentos'))}
+      ${cartao('Despesas', t.despesas, plural(lista.filter(m => m.tipo === 'saida' && efetivo(m)).length, 'movimento', 'movimentos'))}
       ${cartao('Impostos a pagar', t.aPagar, `IVA ${fmt(t.ivaPorEntregar)} · SS ${fmt(t.ssPorPagar)} · já pagos ${fmt(t.impostos)}`)}
       ${cartao('Saldo (fica para ti)', t.livre, 'recebido − despesas − impostos pagos e a pagar', 'destaque')}
     </section>
@@ -504,16 +517,20 @@ function tabelaMovimentos(lista, comAcoes) {
   const linhas = lista.map(m => {
     const v = valores(m);
     const ent = m.tipo === 'entrada';
-    return `<tr>
+    const forn = fornecedorDe(m);
+    const trab = m.custoTrabalhoId && estado.trabalhos.find(t => t.id === m.custoTrabalhoId);
+    const contexto = [forn && esc(forn.nome), trab && `trabalho: ${esc(trab.cliente)}`].filter(Boolean).join(' · ');
+    return `<tr class="${m.pendente ? 'pendente' : ''}">
       <td>${dataPt(m.data)}</td>
-      <td>${esc(m.descricao)}${m.fixaId ? ' <span class="etiqueta" title="Lançada automaticamente como despesa fixa">fixa</span>' : ''}${m.trabalhoId ? ' <span class="etiqueta" title="Criada ao marcar um trabalho como pago">trabalho</span>' : ''}${m.notas ? `<small>${esc(m.notas)}</small>` : ''}</td>
+      <td>${esc(m.descricao)}${m.pendente ? ' <span class="etiqueta pendente">por pagar</span>' : ''}${contexto ? `<small>${contexto}</small>` : ''}${m.fixaId ? ' <span class="etiqueta" title="Lançada automaticamente como despesa fixa">fixa</span>' : ''}${m.trabalhoId ? ' <span class="etiqueta" title="Criada ao marcar um trabalho como pago">trabalho</span>' : ''}${m.notas ? `<small>${esc(m.notas)}</small>` : ''}</td>
       <td>${esc(m.categoria)}</td>
       <td><span class="tipo ${m.tipo}"><i></i>${TIPOS[m.tipo]}</span></td>
       ${comAcoes ? `<td class="num">${fmt(m.valor)}</td>
       <td class="num">${ent ? fmt(v.iva) : '—'}</td>
       <td class="num">${ent ? fmt(-v.irs) : '—'}</td>` : ''}
-      <td class="num${v.liquido < 0 ? ' negativo' : ''}">${v.liquido > 0 ? '+' : ''}${fmt(v.liquido)}</td>
+      <td class="num${v.liquido < 0 && !m.pendente ? ' negativo' : ''}">${v.liquido > 0 ? '+' : ''}${fmt(v.liquido)}</td>
       ${comAcoes ? `<td class="acoes-l">
+        ${m.pendente ? `<button class="link" data-acao="pagar-mov" data-id="${m.id}">Marcar pago</button>` : ''}
         <button class="link" data-acao="editar" data-id="${m.id}">Editar</button>
         <button class="link" data-acao="duplicar" data-id="${m.id}">Duplicar</button>
         <button class="link perigo" data-acao="apagar" data-id="${m.id}">Apagar</button></td>` : ''}
@@ -530,7 +547,7 @@ function renderMovimentos() {
   $('#conteudo').innerHTML = `
     <section class="painel">
       <div class="filtros">
-        <input type="search" id="f-texto" placeholder="Procurar descrição, categoria ou notas…" value="${esc(filtros.texto)}">
+        <input type="search" id="f-texto" placeholder="Procurar descrição, categoria, fornecedor ou notas…" value="${esc(filtros.texto)}">
         <select id="f-tipo">
           <option value="">Todos os tipos</option>
           ${Object.entries(TIPOS).map(([k, n]) => `<option value="${k}"${filtros.tipo === k ? ' selected' : ''}>${n}</option>`).join('')}
@@ -548,8 +565,8 @@ function atualizarLista() {
   const q = filtros.texto.trim().toLocaleLowerCase('pt');
   const lista = ordenar(doPeriodo().filter(m =>
     (!filtros.tipo || m.tipo === filtros.tipo) &&
-    (!q || [m.descricao, m.categoria, m.notas].some(s => (s || '').toLocaleLowerCase('pt').includes(q)))));
-  const soma = lista.reduce((s, m) => s + valores(m).liquido, 0);
+    (!q || [m.descricao, m.categoria, m.notas, fornecedorDe(m)?.nome].some(s => (s || '').toLocaleLowerCase('pt').includes(q)))));
+  const soma = lista.filter(efetivo).reduce((s, m) => s + valores(m).liquido, 0);
   $('#f-resumo').textContent = `${lista.length} movimento${lista.length === 1 ? '' : 's'} · ${soma >= 0 ? '+' : ''}${fmt(soma)}`;
   $('#lista-mov').innerHTML = lista.length ? tabelaMovimentos(lista, true)
     : vazio(estado.movimentos.length ? `Sem movimentos em ${nomePeriodo()} com estes filtros.` : 'Ainda não tens movimentos registados.', estado.movimentos.length ? '' : BOTOES_INICIO);
@@ -741,8 +758,12 @@ const FILTROS_T = {
 };
 
 // Dinheiro que entra na conta por um trabalho: valor + IVA − IRS retido pelo cliente.
+// Pagamentos a fornecedores associados a um trabalho (pagos ou por pagar).
+const custosDe = t => estado.movimentos.filter(m => m.custoTrabalhoId === t.id).reduce((s, m) => s + m.valor, 0);
+const notaCustos = t => { const c = custosDe(t); return c ? `<small>custos ${fmt(c)}</small>` : ''; };
 const aReceber = t => valores({ tipo: 'entrada', valor: t.valor, iva: t.iva, irs: t.irs }).liquido;
-const emConta = () => (estado.definicoes.saldoInicial || 0) + estado.movimentos.reduce((s, m) => s + valores(m).liquido, 0);
+const emConta = () => (estado.definicoes.saldoInicial || 0) + estado.movimentos.filter(efetivo).reduce((s, m) => s + valores(m).liquido, 0);
+const porPagar = () => estado.movimentos.filter(m => m.pendente);
 const porReceber = () => estado.trabalhos.filter(FILTROS_T['por-receber'][1]);
 const diasDesde = iso => Math.floor((new Date(hoje()) - new Date(iso)) / 86400000);
 // Trabalho feito ou entregue há mais de 30 dias e ainda por pagar.
@@ -753,11 +774,15 @@ function faixaDinheiro() {
   const lista = porReceber();
   const fora = lista.reduce((s, t) => s + aReceber(t), 0);
   const atraso = lista.filter(emAtraso).length;
+  const dividas = porPagar();
+  const aPagar = dividas.reduce((s, m) => s + m.valor, 0);
   return `<section class="dinheiro">
     <div><span class="rot">Em conta</span><b class="${conta < 0 ? 'negativo' : ''}">${fmt(conta)}</b><small>dinheiro que já recebeste</small></div>
     <button data-acao="ver-por-receber"><span class="rot">Por receber</span><b>${fmt(fora)}</b>
-      <small>${lista.length} trabalho${lista.length === 1 ? '' : 's'} por pagar${atraso ? ` · <span class="atraso">${atraso} em atraso</span>` : ''}</small></button>
-    <div><span class="rot">Total da empresa</span><b>${fmt(conta + fora)}</b><small>em conta + por receber</small></div>
+      <small>${plural(lista.length, 'trabalho', 'trabalhos')} por pagar${atraso ? ` · <span class="atraso">${atraso} em atraso</span>` : ''}</small></button>
+    <button data-acao="ir" data-vista="fornecedores"><span class="rot">A pagar</span><b>${fmt(aPagar)}</b>
+      <small>${dividas.length ? `${plural(dividas.length, 'pagamento', 'pagamentos')} a fornecedores` : 'nada a fornecedores'}</small></button>
+    <div><span class="rot">Total da empresa</span><b>${fmt(conta + fora - aPagar)}</b><small>em conta + por receber − a pagar</small></div>
   </section>`;
 }
 
@@ -800,6 +825,7 @@ function apagarTrabalho(t) {
     const m = estado.movimentos.find(x => x.id === t.movimentoId);
     if (m) delete m.trabalhoId;
   }
+  for (const m of estado.movimentos) if (m.custoTrabalhoId === t.id) delete m.custoTrabalhoId;
   estado.trabalhos = estado.trabalhos.filter(x => x.id !== t.id);
   guardar();
   render();
@@ -855,11 +881,12 @@ function atualizarTrabalhos() {
       <td><button class="link-cliente" data-acao="abrir-cliente" data-cliente="${t.clienteId}">${esc(t.cliente)}</button>${contactoDe(clienteDe(t)) ? `<small>${esc(contactoDe(clienteDe(t)))}</small>` : ''}</td>
       <td>${esc(t.servico)}${t.descricao ? `<small>${esc(t.descricao)}</small>` : ''}</td>
       <td><select class="fase" data-fase-t="${t.id}" aria-label="Fase">${Object.entries(FASES).map(([k, n]) => `<option value="${k}"${t.fase === k ? ' selected' : ''}>${n}</option>`).join('')}</select></td>
-      <td class="num">${fmt(aReceber(t))}<small>${fmt(t.valor)} sem IVA</small></td>
+      <td class="num">${fmt(aReceber(t))}<small>${fmt(t.valor)} sem IVA</small>${notaCustos(t)}</td>
       <td><button class="pagamento ${t.pago ? 'pago' : ''}" data-acao="pagar-trabalho" data-trabalho="${t.id}"
         title="${t.pago ? 'Clica para marcar como não pago' : 'Clica para marcar como pago'}">${t.pago ? `✓ Pago <small>${dataPt(t.dataPagamento)}</small>` : 'Por pagar'}</button>
         ${atraso ? `<small class="atraso">há ${diasDesde(t.data)} dias</small>` : ''}</td>
       <td class="acoes-l">
+        <button class="link" data-acao="custo-trabalho" data-trabalho="${t.id}" title="Registar um pagamento a fornecedor para este trabalho">+ Custo</button>
         <button class="link" data-acao="editar-trabalho" data-trabalho="${t.id}">Editar</button>
         <button class="link perigo" data-acao="apagar-trabalho" data-trabalho="${t.id}">Apagar</button></td>
     </tr>`;
@@ -973,7 +1000,7 @@ formTrab.addEventListener('submit', e => {
   if (novo) aviso(`Novo cliente criado: ${c.nome}`);
 });
 
-const algumDialogoAberto = () => dlg.open || dlgFixa.open || dlgTrab.open || dlgCliente.open;
+const algumDialogoAberto = () => dlg.open || dlgFixa.open || dlgTrab.open || dlgCliente.open || dlgFornecedor.open;
 
 // ---------- Clientes (CRM) ----------
 
@@ -1096,7 +1123,7 @@ function renderFichaCliente() {
             <td>${dataPt(t.data)}</td>
             <td>${esc(t.servico)}${t.descricao ? `<small>${esc(t.descricao)}</small>` : ''}</td>
             <td>${FASES[t.fase]}</td>
-            <td class="num">${fmt(aReceber(t))}<small>${fmt(t.valor)} sem IVA</small></td>
+            <td class="num">${fmt(aReceber(t))}<small>${fmt(t.valor)} sem IVA</small>${notaCustos(t)}</td>
             <td><button class="pagamento ${t.pago ? 'pago' : ''}" data-acao="pagar-trabalho" data-trabalho="${t.id}">${t.pago ? `✓ Pago <small>${dataPt(t.dataPagamento)}</small>` : 'Por pagar'}</button>
               ${emAtraso(t) ? `<small class="atraso">há ${diasDesde(t.data)} dias</small>` : ''}</td>
             <td class="acoes-l"><button class="link" data-acao="editar-trabalho" data-trabalho="${t.id}">Editar</button></td>
@@ -1165,6 +1192,194 @@ function exportarClientes() {
   descarregar(`clientes-${hoje()}.csv`, '﻿' + [cab.map(celula).join(';'), ...linhas].join('\r\n'), 'text/csv;charset=utf-8');
 }
 
+// ---------- Fornecedores ----------
+
+const fornecedorDe = m => m.fornecedorId && estado.fornecedores.find(f => f.id === m.fornecedorId);
+const filtrosF = { texto: '', ordem: 'recentes' };
+let fornecedorAberto = null;
+
+// Devolve o fornecedor com este nome (ignorando acentos e maiúsculas), criando-o se não existir.
+function obterFornecedor(nome) {
+  let f = estado.fornecedores.find(x => chaveNome(x.nome) === chaveNome(nome));
+  const novo = !f;
+  if (novo) {
+    f = { id: novoId(), criado: Date.now(), nome: nome.trim().replace(/\s+/g, ' '), servico: '', email: '', telefone: '', nif: '', iban: '', notas: '' };
+    estado.fornecedores.push(f);
+  }
+  return { f, novo };
+}
+
+function resumoFornecedor(f) {
+  const pagamentos = ordenar(estado.movimentos.filter(m => m.fornecedorId === f.id));
+  const pagos = pagamentos.filter(efetivo);
+  const anoAtual = String(agora.getFullYear());
+  return {
+    pagamentos,
+    pago: pagos.reduce((s, m) => s + m.valor, 0),
+    pagoAno: pagos.filter(m => m.data.startsWith(anoAtual)).reduce((s, m) => s + m.valor, 0),
+    aPagar: pagamentos.filter(m => m.pendente).reduce((s, m) => s + m.valor, 0),
+    ultimo: pagos[0]?.data || '',
+    desde: pagamentos.length ? pagamentos[pagamentos.length - 1].data : '',
+    trabalhos: new Set(pagamentos.map(m => m.custoTrabalhoId).filter(Boolean)).size,
+    categorias: [...new Set(pagamentos.map(m => m.categoria))],
+  };
+}
+
+function renderFornecedores() {
+  if (fornecedorAberto && estado.fornecedores.some(f => f.id === fornecedorAberto)) { renderFichaFornecedor(); return; }
+  fornecedorAberto = null;
+  const anoAtual = String(agora.getFullYear());
+  const resumos = estado.fornecedores.map(f => ({ f, r: resumoFornecedor(f) }));
+  const top = [...resumos].sort((a, b) => b.r.pagoAno - a.r.pagoAno)[0];
+  const dividas = porPagar();
+
+  $('#conteudo').innerHTML = `
+    <section class="cartoes">
+      ${cartao(`Pago a fornecedores em ${anoAtual}`, resumos.reduce((s, { r }) => s + r.pagoAno, 0), 'pagamentos com fornecedor indicado')}
+      ${cartao('A pagar', dividas.reduce((s, m) => s + m.valor, 0), dividas.length ? plural(dividas.length, 'pagamento pendente', 'pagamentos pendentes') : 'nada pendente')}
+      ${cartaoTexto('Fornecedores', estado.fornecedores.length, `${resumos.filter(({ r }) => r.pagoAno).length} com pagamentos em ${anoAtual}`)}
+      ${cartao(`Maior fornecedor em ${anoAtual}`, top?.r.pagoAno || 0, top && top.r.pagoAno ? esc(top.f.nome) : '—', 'destaque')}
+    </section>
+    ${dividas.length ? `<section class="painel">
+      <h2>Por pagar</h2>
+      ${tabelaMovimentos(ordenar(dividas), true)}
+    </section>` : ''}
+    <section class="painel">
+      <div class="painel-topo"><h2>Fornecedores</h2>
+        <div class="botoes"><button data-acao="exportar-fornecedores">Exportar (.csv)</button><button data-acao="novo-fornecedor">+ Novo fornecedor</button><button class="primario" data-acao="pagamento-fornecedor">+ Pagamento</button></div></div>
+      <div class="filtros">
+        <input type="search" id="fo-texto" placeholder="Procurar nome, serviço, email, NIF…" value="${esc(filtrosF.texto)}">
+        <select id="fo-ordem" aria-label="Ordenar">
+          <option value="recentes"${filtrosF.ordem === 'recentes' ? ' selected' : ''}>Pagamento mais recente</option>
+          <option value="valor"${filtrosF.ordem === 'valor' ? ' selected' : ''}>Maior valor</option>
+          <option value="nome"${filtrosF.ordem === 'nome' ? ' selected' : ''}>Nome (A–Z)</option>
+        </select>
+      </div>
+      <div id="lista-forn"></div>
+      <p class="nota" style="margin-top:.9rem">Regista os pagamentos como saídas com o campo <b>Fornecedor</b>: o fornecedor é criado sozinho na primeira vez. Associa o pagamento a um trabalho para saberes quanto te custou cada trabalho. Os pagamentos marcados como <b>por pagar</b> não saem da conta até os marcares como pagos.</p>
+    </section>`;
+  $('#fo-texto').addEventListener('input', e => { filtrosF.texto = e.target.value; atualizarFornecedores(); });
+  $('#fo-ordem').addEventListener('change', e => { filtrosF.ordem = e.target.value; atualizarFornecedores(); });
+  atualizarFornecedores();
+}
+
+function atualizarFornecedores() {
+  const q = chaveNome(filtrosF.texto);
+  const ordem = {
+    recentes: (a, b) => b.r.ultimo.localeCompare(a.r.ultimo) || a.f.nome.localeCompare(b.f.nome, 'pt'),
+    valor: (a, b) => b.r.pago - a.r.pago,
+    nome: (a, b) => a.f.nome.localeCompare(b.f.nome, 'pt'),
+  }[filtrosF.ordem];
+  const lista = estado.fornecedores
+    .filter(f => !q || [f.nome, f.servico, f.email, f.telefone, f.nif, f.notas].some(x => chaveNome(x).includes(q)))
+    .map(f => ({ f, r: resumoFornecedor(f) }))
+    .sort(ordem);
+  if (!lista.length) {
+    $('#lista-forn').innerHTML = vazio(estado.fornecedores.length ? 'Nenhum fornecedor encontrado.'
+      : 'Ainda não tens fornecedores. São criados sozinhos quando registas um pagamento com o campo Fornecedor preenchido.',
+      estado.fornecedores.length ? '' : '<button class="primario" data-acao="pagamento-fornecedor">+ Pagamento a fornecedor</button><button data-acao="novo-fornecedor">+ Novo fornecedor</button>');
+    return;
+  }
+  $('#lista-forn').innerHTML = `<div class="tabela-wrap"><table class="clicavel">
+    <thead><tr><th>Fornecedor</th><th>Serviço</th><th class="num">Pagamentos</th><th>Último pagamento</th><th class="num">Total pago</th><th class="num">A pagar</th></tr></thead>
+    <tbody>${lista.map(({ f, r }) => `<tr data-acao="abrir-fornecedor" data-fornecedor="${f.id}">
+      <td><span class="link-cliente">${esc(f.nome)}</span>${contactoDe(f) ? `<small>${esc(contactoDe(f))}</small>` : ''}</td>
+      <td>${esc(f.servico || r.categorias.join(', ')) || '<span class="opc">—</span>'}${r.trabalhos ? `<small>${plural(r.trabalhos, 'trabalho associado', 'trabalhos associados')}</small>` : ''}</td>
+      <td class="num">${r.pagamentos.length}</td>
+      <td>${r.ultimo ? dataPt(r.ultimo) : '—'}</td>
+      <td class="num">${fmt(r.pago)}</td>
+      <td class="num${r.aPagar ? ' atraso' : ''}">${r.aPagar ? fmt(r.aPagar) : '—'}</td>
+    </tr>`).join('')}</tbody></table></div>`;
+}
+
+function renderFichaFornecedor() {
+  const f = estado.fornecedores.find(x => x.id === fornecedorAberto);
+  const r = resumoFornecedor(f);
+  const dado = (rot, v) => v ? `<div><span class="rot">${rot}</span>${esc(v)}</div>` : '';
+  $('#titulo').textContent = f.nome;
+  $('#conteudo').innerHTML = `
+    <p style="margin:-.4rem 0 1rem"><button class="link" data-acao="ir" data-vista="fornecedores">← Todos os fornecedores</button></p>
+    <section class="cartoes">
+      ${cartao('Total pago', r.pago, plural(r.pagamentos.filter(efetivo).length, 'pagamento', 'pagamentos'))}
+      ${cartao(`Pago em ${agora.getFullYear()}`, r.pagoAno, r.trabalhos ? plural(r.trabalhos, 'trabalho associado', 'trabalhos associados') : 'este ano')}
+      ${cartao('A pagar', r.aPagar, r.aPagar ? 'ainda em dívida' : 'nada em dívida')}
+      ${cartaoTexto('Fornecedor desde', r.desde ? dataPt(r.desde) : '—', r.ultimo ? `último pagamento: ${dataPt(r.ultimo)}` : 'sem pagamentos', 'destaque')}
+    </section>
+    <section class="painel">
+      <div class="painel-topo"><h2>Dados do fornecedor</h2><button data-acao="editar-fornecedor" data-fornecedor="${f.id}">Editar</button></div>
+      <div class="ficha">
+        ${dado('Serviço', f.servico)}${dado('Email', f.email)}${dado('Telefone', f.telefone)}${dado('NIF', f.nif)}${dado('IBAN', f.iban)}${dado('Notas', f.notas)}
+        ${[f.servico, f.email, f.telefone, f.nif, f.iban, f.notas].some(Boolean) ? '' : '<p class="opc">Sem dados. Carrega em Editar para adicionar o serviço, contactos, NIF e IBAN.</p>'}
+      </div>
+      <div class="botoes" style="margin-top:.9rem">
+        ${f.email ? `<a class="link-cliente" href="mailto:${esc(f.email)}">Enviar email</a>` : ''}
+        <button class="link perigo" data-acao="apagar-fornecedor" data-fornecedor="${f.id}">Apagar fornecedor</button>
+      </div>
+    </section>
+    <section class="painel">
+      <div class="painel-topo"><h2>Pagamentos <small>${plural(r.pagamentos.length, 'registo', 'registos')}</small></h2>
+        <button class="primario" data-acao="pagamento-fornecedor" data-fornecedor="${f.id}">+ Novo pagamento</button></div>
+      ${r.pagamentos.length ? tabelaMovimentos(r.pagamentos, true) : vazio('Ainda sem pagamentos a este fornecedor.')}
+    </section>`;
+}
+
+const dlgFornecedor = $('#dlg-fornecedor');
+const formFornecedor = $('#form-fornecedor');
+const CAMPOS_FORN = ['nome', 'servico', 'email', 'telefone', 'nif', 'iban', 'notas'];
+let fornecedorEmEdicao = null;
+
+function abrirFormFornecedor(f = null) {
+  formFornecedor.reset();
+  $('#forn-erro').hidden = true;
+  fornecedorEmEdicao = f ? f.id : null;
+  $('#forn-titulo').textContent = f ? 'Editar fornecedor' : 'Novo fornecedor';
+  for (const k of CAMPOS_FORN) formFornecedor.elements[k].value = f?.[k] || '';
+  dlgFornecedor.showModal();
+  formFornecedor.elements.nome.focus();
+}
+
+$('#forn-cancelar').addEventListener('click', () => dlgFornecedor.close());
+formFornecedor.addEventListener('submit', e => {
+  e.preventDefault();
+  const dados = Object.fromEntries(CAMPOS_FORN.map(k => [k, formFornecedor.elements[k].value.trim()]));
+  dados.nome = dados.nome.replace(/\s+/g, ' ');
+  const repetido = estado.fornecedores.find(x => x.id !== fornecedorEmEdicao && chaveNome(x.nome) === chaveNome(dados.nome));
+  const erro = !dados.nome ? 'Escreve o nome do fornecedor.' : repetido ? `Já existe o fornecedor “${repetido.nome}”.` : '';
+  if (erro) { $('#forn-erro').textContent = erro; $('#forn-erro').hidden = false; return; }
+  if (fornecedorEmEdicao) {
+    Object.assign(estado.fornecedores.find(x => x.id === fornecedorEmEdicao), dados);
+  } else {
+    const f = { id: novoId(), criado: Date.now(), ...dados };
+    estado.fornecedores.push(f);
+    fornecedorAberto = f.id;
+    vista = 'fornecedores';
+  }
+  guardar();
+  dlgFornecedor.close();
+  render();
+});
+
+function apagarFornecedor(f) {
+  if (!f) return;
+  const n = estado.movimentos.filter(m => m.fornecedorId === f.id).length;
+  if (n) { alert(`“${f.nome}” tem ${plural(n, 'pagamento', 'pagamentos')} registados. Apaga esses pagamentos ou tira-lhes o fornecedor antes de apagar a ficha.`); return; }
+  if (!confirm(`Apagar o fornecedor “${f.nome}”?`)) return;
+  estado.fornecedores = estado.fornecedores.filter(x => x.id !== f.id);
+  fornecedorAberto = null;
+  guardar();
+  render();
+}
+
+function exportarFornecedores() {
+  const celula = v => typeof v === 'number' ? v.toFixed(2).replace('.', ',') : `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const cab = ['Nome', 'Serviço', 'Email', 'Telefone', 'NIF', 'IBAN', 'Pagamentos', 'Total pago', 'A pagar', 'Último pagamento', 'Notas'];
+  const linhas = estado.fornecedores.map(f => {
+    const r = resumoFornecedor(f);
+    return [f.nome, f.servico, f.email, f.telefone, f.nif, f.iban, String(r.pagamentos.length), r.pago, r.aPagar, r.ultimo ? dataPt(r.ultimo) : '', f.notas].map(celula).join(';');
+  });
+  descarregar(`fornecedores-${hoje()}.csv`, '﻿' + [cab.map(celula).join(';'), ...linhas].join('\r\n'), 'text/csv;charset=utf-8');
+}
+
 // ---------- Personalização ----------
 
 function usoCategoria(tipo, nome) {
@@ -1212,7 +1427,7 @@ function renderPersonalizacao() {
         <label>Ao abrir, mostrar
           <select id="p-vista">
             <option value="ultima"${p.vistaInicial === 'ultima' ? ' selected' : ''}>O último separador usado</option>
-            ${['resumo', 'trabalhos', 'clientes', 'movimentos', 'fixas', 'impostos'].map(v => `<option value="${v}"${p.vistaInicial === v ? ' selected' : ''}>${VISTAS[v]}</option>`).join('')}
+            ${['resumo', 'trabalhos', 'clientes', 'fornecedores', 'movimentos', 'fixas', 'impostos'].map(v => `<option value="${v}"${p.vistaInicial === v ? ' selected' : ''}>${VISTAS[v]}</option>`).join('')}
           </select></label>
         <label>Período ao abrir
           <select id="p-periodo">
@@ -1371,10 +1586,10 @@ function descarregar(nome, conteudo, tipo) {
 
 function exportarCSV() {
   const celula = v => typeof v === 'number' ? v.toFixed(2).replace('.', ',') : `"${String(v ?? '').replace(/"/g, '""')}"`;
-  const cab = ['Data', 'Tipo', 'Categoria', 'Descrição', 'Valor', 'IVA %', 'IVA', 'IRS %', 'IRS retido', 'Na conta', 'Despesa fixa', 'Notas'];
+  const cab = ['Data', 'Tipo', 'Categoria', 'Descrição', 'Fornecedor', 'Valor', 'IVA %', 'IVA', 'IRS %', 'IRS retido', 'Na conta', 'Estado', 'Despesa fixa', 'Notas'];
   const linhas = ordenar(estado.movimentos).reverse().map(m => {
     const v = valores(m), ent = m.tipo === 'entrada';
-    return [dataPt(m.data), TIPOS[m.tipo], m.categoria, m.descricao, m.valor, ent ? m.iva : '', v.iva, ent ? m.irs : '', v.irs, v.liquido, m.fixaId ? 'sim' : '', m.notas || '']
+    return [dataPt(m.data), TIPOS[m.tipo], m.categoria, m.descricao, fornecedorDe(m)?.nome || '', m.valor, ent ? m.iva : '', v.iva, ent ? m.irs : '', v.irs, v.liquido, m.pendente ? 'por pagar' : '', m.fixaId ? 'sim' : '', m.notas || '']
       .map(celula).join(';');
   });
   // BOM + ponto e vírgula para o Excel/Numbers em português abrirem bem.
@@ -1392,7 +1607,7 @@ $('#ficheiro').addEventListener('change', async e => {
     alert('Este ficheiro não parece ser uma cópia de segurança válida.');
     return;
   }
-  if (!confirm(`Importar ${dados.movimentos.length} movimentos, ${dados.trabalhos.length} trabalhos, ${dados.clientes.length} clientes e ${dados.fixas.length} despesas fixas? Os dados atuais serão substituídos.`)) return;
+  if (!confirm(`Importar ${dados.movimentos.length} movimentos, ${dados.trabalhos.length} trabalhos, ${dados.clientes.length} clientes, ${dados.fornecedores.length} fornecedores e ${dados.fixas.length} despesas fixas? Os dados atuais serão substituídos.`)) return;
   estado = dados;
   guardar();
   gerarFixas();
@@ -1420,7 +1635,8 @@ function atualizarForm() {
   const tipo = campoF('tipo').value;
   const ent = tipo === 'entrada';
   $$('.so-entrada', form).forEach(el => { el.hidden = !ent; });
-  $('#lbl-valor').textContent = ent ? 'Valor sem IVA (€)' : 'Valor pago (€)';
+  $$('.so-saida', form).forEach(el => { el.hidden = tipo !== 'saida'; });
+  $('#lbl-valor').textContent = ent ? 'Valor sem IVA (€)' : tipo === 'saida' && campoF('pendente').checked ? 'Valor a pagar (€)' : 'Valor pago (€)';
   campoF('descricao').placeholder = { entrada: 'ex.: Casamento Ana & Rui', saida: 'ex.: Supermercado', imposto: 'ex.: IVA 3.º trimestre' }[tipo];
   const valor = parseFloat(campoF('valor').value);
   if (ent && valor > 0) {
@@ -1431,14 +1647,43 @@ function atualizarForm() {
   }
 }
 
-function abrirForm(m = null, duplicar = false) {
+// Ao escrever o nome de um fornecedor: indica se já existe e sugere a categoria que costuma usar.
+function atualizarFornecedorForm() {
+  const nome = campoF('fornecedor').value;
+  const f = estado.fornecedores.find(x => chaveNome(x.nome) === chaveNome(nome));
+  $('#mov-forn-info').textContent = !nome.trim() ? '' : f
+    ? `Fornecedor existente${f.servico ? ` · ${f.servico}` : ''}`
+    : 'Novo fornecedor: será criado ao guardar';
+  // Só muda a categoria se ainda não foi escolhida à mão.
+  if (categoriaEscolhida || !nome.trim()) return;
+  const ultimo = f && ordenar(estado.movimentos.filter(m => m.fornecedorId === f.id))[0];
+  const sugerida = ultimo ? ultimo.categoria : 'Fornecedores';
+  if (categoriasDe('saida').includes(sugerida)) campoF('categoria').value = sugerida;
+}
+let categoriaEscolhida = false;
+form.elements.categoria.addEventListener('change', () => { categoriaEscolhida = true; });
+form.elements.fornecedor.addEventListener('input', atualizarFornecedorForm);
+
+function preencherTrabalhosForm(atual) {
+  const lista = [...estado.trabalhos].filter(t => t.fase !== 'cancelado' || t.id === atual).sort((a, b) => b.data.localeCompare(a.data));
+  campoF('custoTrabalho').innerHTML = '<option value="">— nenhum —</option>' + lista.map(t =>
+    `<option value="${t.id}"${t.id === atual ? ' selected' : ''}>${dataPt(t.data)} · ${esc(t.cliente)} — ${esc(t.descricao || t.servico)}</option>`).join('');
+}
+
+function abrirForm(m = null, duplicar = false, predefinido = {}) {
   form.reset();
+  $('#lista-fornecedores').innerHTML = [...estado.fornecedores].sort((a, b) => a.nome.localeCompare(b.nome, 'pt'))
+    .map(f => `<option value="${esc(f.nome)}">`).join('');
   $('#erro').hidden = true;
   idEmEdicao = m && !duplicar ? m.id : null;
   $('#dlg-titulo').textContent = idEmEdicao ? 'Editar movimento' : 'Novo movimento';
-  const tipo = m?.tipo || 'entrada';
+  const tipo = m?.tipo || predefinido.tipo || 'entrada';
   campoF('tipo').value = tipo;
-  preencherCategorias(campoF('categoria'), tipo, m?.categoria);
+  preencherCategorias(campoF('categoria'), tipo, m?.categoria || predefinido.categoria);
+  campoF('fornecedor').value = fornecedorDe(m || {})?.nome || predefinido.fornecedor || '';
+  preencherTrabalhosForm(m?.custoTrabalhoId || predefinido.custoTrabalho);
+  campoF('pendente').checked = !!m?.pendente && !duplicar;
+  categoriaEscolhida = !!(m || predefinido.categoria);
   const dataPadrao = periodo.mes && !(periodo.ano === agora.getFullYear() && periodo.mes === agora.getMonth() + 1)
     ? `${periodo.ano}-${doisDig(periodo.mes)}-01` : hoje();
   campoF('data').value = m && !duplicar ? m.data : dataPadrao;
@@ -1448,6 +1693,7 @@ function abrirForm(m = null, duplicar = false) {
   campoF('irs').value = m?.tipo === 'entrada' ? m.irs : estado.definicoes.irs;
   campoF('notas').value = m?.notas || '';
   atualizarForm();
+  atualizarFornecedorForm();
   dlg.showModal();
   campoF(m ? 'valor' : 'descricao').focus();
 }
@@ -1477,15 +1723,29 @@ form.addEventListener('submit', e => {
     iva: ent ? Math.max(0, parseFloat(campoF('iva').value) || 0) : 0,
     irs: ent ? Math.max(0, parseFloat(campoF('irs').value) || 0) : 0,
     notas: campoF('notas').value.trim(),
+    pendente: tipo === 'saida' && campoF('pendente').checked,
+    fornecedorId: undefined,
+    custoTrabalhoId: tipo === 'saida' ? campoF('custoTrabalho').value || undefined : undefined,
   };
+  let fornecedorNovo = null;
+  const nomeForn = campoF('fornecedor').value.trim();
+  if (tipo === 'saida' && nomeForn) {
+    const { f, novo } = obterFornecedor(nomeForn);
+    mov.fornecedorId = f.id;
+    if (novo) fornecedorNovo = f;
+  }
   if (idEmEdicao) {
     const i = estado.movimentos.findIndex(m => m.id === idEmEdicao);
     estado.movimentos[i] = { ...estado.movimentos[i], ...mov };
   } else {
     estado.movimentos.push({ ...mov, criado: Date.now() });
   }
+  // Campos vazios não ficam guardados.
+  const guardado = estado.movimentos.find(m => m.id === mov.id);
+  for (const k of ['fornecedorId', 'custoTrabalhoId']) if (!guardado[k]) delete guardado[k];
   guardar();
   dlg.close();
+  if (fornecedorNovo) aviso(`Novo fornecedor criado: ${fornecedorNovo.nome}`);
   // Mostra o período onde o movimento ficou, para não "desaparecer".
   if (!noPeriodo(mov, periodo.ano, periodo.mes)) {
     periodo.ano = +data.slice(0, 4);
@@ -1496,9 +1756,10 @@ form.addEventListener('submit', e => {
 
 // ---------- Eventos globais ----------
 
-function irPara(v, cliente = null) {
+function irPara(v, aberto = null) {
   vista = v;
-  clienteAberto = cliente;
+  clienteAberto = v === 'clientes' ? aberto : null;
+  fornecedorAberto = v === 'fornecedores' ? aberto : null;
   guardarUI();
   render();
 }
@@ -1510,6 +1771,7 @@ document.addEventListener('click', e => {
   const f = b.dataset.fixa && estado.fixas.find(x => x.id === b.dataset.fixa);
   const tr = b.dataset.trabalho && estado.trabalhos.find(x => x.id === b.dataset.trabalho);
   const cl = b.dataset.cliente && estado.clientes.find(x => x.id === b.dataset.cliente);
+  const fo = b.dataset.fornecedor && estado.fornecedores.find(x => x.id === b.dataset.fornecedor);
   switch (b.dataset.acao) {
     case 'novo': abrirForm(); break;
     case 'editar': abrirForm(m); break;
@@ -1526,6 +1788,16 @@ document.addEventListener('click', e => {
     case 'novo-trabalho-cliente': abrirFormTrabalho(null, cl); break;
     case 'abrir-cliente': irPara('clientes', b.dataset.cliente); break;
     case 'novo-cliente': abrirFormCliente(); break;
+    case 'abrir-fornecedor': irPara('fornecedores', b.dataset.fornecedor); break;
+    case 'novo-fornecedor': abrirFormFornecedor(); break;
+    case 'editar-fornecedor': abrirFormFornecedor(fo); break;
+    case 'apagar-fornecedor': apagarFornecedor(fo); break;
+    case 'pagamento-fornecedor': abrirForm(null, false, { tipo: 'saida', fornecedor: fo?.nome || '', categoria: 'Fornecedores' }); break;
+    case 'custo-trabalho': abrirForm(null, false, { tipo: 'saida', custoTrabalho: tr?.id, categoria: 'Fornecedores' }); break;
+    case 'pagar-mov':
+      if (m) { m.pendente = false; m.data = hoje(); guardar(); render(); aviso(`Pago: ${fmt(m.valor)}${fornecedorDe(m) ? ` a ${fornecedorDe(m).nome}` : ''}.`); }
+      break;
+    case 'exportar-fornecedores': exportarFornecedores(); break;
     case 'editar-cliente': abrirFormCliente(cl); break;
     case 'apagar-cliente': apagarCliente(cl); break;
     case 'exportar-clientes': exportarClientes(); break;
@@ -1560,11 +1832,12 @@ document.addEventListener('click', e => {
     case 'importar-json': $('#ficheiro').click(); break;
     case 'exportar-csv': exportarCSV(); break;
     case 'apagar-tudo':
-      if (confirm('Apagar TODOS os movimentos, trabalhos, clientes e despesas fixas? Isto não pode ser desfeito. Exporta uma cópia antes, se quiseres.')) {
+      if (confirm('Apagar TODOS os movimentos, trabalhos, clientes, fornecedores e despesas fixas? Isto não pode ser desfeito. Exporta uma cópia antes, se quiseres.')) {
         estado.movimentos = [];
         estado.fixas = [];
         estado.trabalhos = [];
         estado.clientes = [];
+        estado.fornecedores = [];
         guardar(); render();
       }
       break;
