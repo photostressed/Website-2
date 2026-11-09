@@ -19,6 +19,7 @@
       <button data-vista="movimentos">Movimentos</button>
       <button data-vista="fixas">Despesas fixas</button>
       <button data-vista="impostos">Impostos</button>
+      <button data-vista="documentos">Documentos</button>
       <button data-vista="personalizacao">Personalização</button>
       <button data-vista="definicoes">Definições</button>
     </nav>
@@ -156,6 +157,27 @@
     <p id="cli-erro" class="erro" hidden></p>
     <div class="acoes">
       <button type="button" id="cli-cancelar">Cancelar</button>
+      <button type="submit" class="primario">Guardar</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlg-documento">
+  <form id="form-documento" novalidate>
+    <h2 id="doc-titulo">Novo documento</h2>
+    <p id="doc-ficheiro" class="doc-ficheiro"></p>
+    <div class="grelha">
+      <label>Tipo<select name="tipo"></select></label>
+      <label>Data<input name="data" type="date" required></label>
+      <label class="larga">Descrição<input name="descricao" autocomplete="off" placeholder="ex.: IVA 3.º trimestre 2026"></label>
+      <label class="larga"><span>Associar a um movimento <span class="opc">(opcional)</span></span><select name="movimento"></select></label>
+      <label><span>Valor <span class="opc">(opcional)</span></span><input name="valor" type="number" step="0.01" min="0" inputmode="decimal"></label>
+      <label><span>Notas <span class="opc">(opcional)</span></span><input name="notas" autocomplete="off"></label>
+    </div>
+    <p id="doc-fila" class="nota"></p>
+    <p id="doc-erro" class="erro" hidden></p>
+    <div class="acoes">
+      <button type="button" id="doc-cancelar">Cancelar</button>
       <button type="submit" class="primario">Guardar</button>
     </div>
   </form>

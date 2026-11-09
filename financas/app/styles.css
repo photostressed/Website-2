@@ -271,3 +271,19 @@ tr.pendente td{color:var(--text-2)}
 .etiqueta.pendente{border-color:var(--negativo);color:var(--negativo)}
 #dlg-fornecedor textarea{min-height:4.5rem}
 @media (min-width: 641px) and (max-width: 900px){ .dinheiro{grid-template-columns:repeat(2,minmax(0,1fr))} }
+
+/* Documentos */
+.zona-docs{display:flex;flex-direction:column;align-items:center;gap:.5rem;text-align:center;padding:1.4rem 1rem;border:1.5px dashed var(--border);border-radius:12px;background:var(--surface-2);transition:border-color .15s,background .15s}
+.zona-docs.arrastar{border-color:var(--accent);background:var(--surface)}
+.doc-ficheiro{font-size:.85rem;color:var(--text-2);margin:-.4rem 0 1rem;word-break:break-all}
+.em-falta{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:1.2rem}
+.em-falta h3{font-size:.82rem;font-weight:500;color:var(--text-2);margin-bottom:.4rem}
+.em-falta ul{list-style:none;display:flex;flex-direction:column}
+.em-falta li{display:flex;align-items:center;gap:.6rem;padding:.4rem 0;border-top:1px solid var(--border);font-size:.85rem}
+.em-falta li:first-child{border-top:0}
+.em-falta li span{flex:1;min-width:0}
+.em-falta li small{display:block;color:var(--muted);font-size:.74rem}
+.filtro-ativo{display:flex;align-items:center;gap:.6rem;font-size:.82rem;color:var(--text-2);margin-bottom:.8rem;padding:.5rem .7rem;background:var(--surface-2);border-radius:8px}
+.pasta-docs{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;margin-top:.9rem;font-size:.8rem;color:var(--text-2)}
+.pasta-docs code{font:12px ui-monospace,Menlo,monospace;background:var(--surface-2);padding:.15rem .4rem;border-radius:5px;word-break:break-all}
+.clip{font-size:.8rem}

@@ -8,6 +8,7 @@ Pensada para trabalhador independente em Portugal (IVA, retenção de IRS e Segu
 - **Trabalhos**: cada pedido de cliente da fase *Pedido* até *Entregue*, marcado como **pago** ou **por pagar**. Ao marcar como pago, a entrada é criada sozinha em Movimentos. Trabalhos feitos há mais de 30 dias e por pagar aparecem em atraso.
 - **Clientes (CRM)**: ficha de cada cliente com contactos, NIF, notas e todos os trabalhos feitos (quais, quando e quanto), total pago e por receber. Os clientes são criados sozinhos quando registas um trabalho com um nome novo; nomes iguais (mesmo com acentos ou maiúsculas diferentes) ficam no mesmo cliente.
 - **Fornecedores**: pagamentos a fornecedores de serviços (segundo fotógrafo, editor, aluguer, gráfica…) registados como saídas com o fornecedor indicado. A ficha do fornecedor é criada sozinha; cada pagamento pode ficar associado a um trabalho (para veres os custos de cada trabalho) e ficar **por pagar** até o marcares como pago.
+- **Documentos**: recibos emitidos, comprovativos de IVA, Segurança Social e IRS, e faturas de fornecedores (PDF ou foto), ligados ao movimento a que dizem respeito. Mostra os impostos pagos sem comprovativo e as entradas sem recibo. Os ficheiros são copiados para uma pasta (por omissão dentro dos dados da app; pode ser mudada para o iCloud Drive para ficar com cópia de segurança).
 - **Em conta / Por receber / A pagar**: no topo do Resumo e dos Trabalhos, o dinheiro que já tens na conta, o que os clientes ainda te devem e o total. Define o saldo inicial da conta em Definições.
 - **Resumo**: recebido, despesas, impostos pagos e saldo do mês ou do ano. Inclui um gráfico mês a mês e as despesas por categoria.
 - **Reservar para impostos**: quanto IVA e Segurança Social ainda tens de pagar e quanto fica realmente livre.
@@ -46,7 +47,7 @@ o Touch ID ao abrir e volta a pedir sempre que o Mac bloqueia ou adormece.
 Se algum dia ficares sem Touch ID (por exemplo, MacBook fechado com teclado externo), desativa o bloqueio no Terminal:
 
 ```bash
-rm ~/Library/Application\ Support/Financas/config.json
+rm ~/Library/Application\ Support/Financas/config.json   # só desliga o Touch ID; os dados e documentos ficam
 ```
 
 ## Onde ficam os dados

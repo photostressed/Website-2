@@ -11,7 +11,11 @@ const TIPOS = { entrada: 'Entrada', saida: 'Saída', imposto: 'Imposto' };
 const CATEGORIAS_IMPOSTO = ['IVA', 'Segurança Social', 'IRS', 'Outros impostos'];
 
 const VERSAO = 3;
-const VISTAS = { resumo: 'Resumo', trabalhos: 'Trabalhos', clientes: 'Clientes', fornecedores: 'Fornecedores', movimentos: 'Movimentos', fixas: 'Despesas fixas', impostos: 'Impostos', personalizacao: 'Personalização', definicoes: 'Definições' };
+const VISTAS = { resumo: 'Resumo', trabalhos: 'Trabalhos', clientes: 'Clientes', fornecedores: 'Fornecedores', movimentos: 'Movimentos', fixas: 'Despesas fixas', impostos: 'Impostos', documentos: 'Documentos', personalizacao: 'Personalização', definicoes: 'Definições' };
+const TIPOS_DOC = {
+  recibo: 'Recibo emitido', iva: 'Comprovativo IVA', ss: 'Comprovativo Segurança Social',
+  irs: 'Comprovativo IRS', fatura: 'Fatura de fornecedor', outro: 'Outro',
+};
 const FASES = { pedido: 'Pedido', orcamento: 'Orçamento enviado', confirmado: 'Confirmado', feito: 'Feito', entregue: 'Entregue', cancelado: 'Cancelado' };
 // Fases em que o trabalho já está garantido e, se não estiver pago, o dinheiro é "por receber".
 const FASES_GARANTIDAS = ['confirmado', 'feito', 'entregue'];
@@ -37,6 +41,7 @@ const padrao = () => ({
   trabalhos: [],
   clientes: [],
   fornecedores: [],
+  documentos: [],
   movimentos: [],
 });
 
@@ -110,6 +115,9 @@ function normalizar(d) {
         fim: mesValido(f.fim) ? f.fim : '', retomada: mesValido(f.retomada) ? f.retomada : '',
         ativa: f.ativa !== false, iva: +f.iva || 0, irs: +f.irs || 0, geradas: Array.isArray(f.geradas) ? f.geradas : [],
       })),
+    documentos: (Array.isArray(d.documentos) ? d.documentos : [])
+      .filter(x => x && typeof x.ficheiro === 'string' && TIPOS_DOC[x.tipo] && /^\d{4}-\d{2}-\d{2}$/.test(x.data))
+      .map(x => ({ descricao: '', notas: '', nomeOriginal: x.ficheiro, ...x, id: x.id || novoId(), valor: Number.isFinite(+x.valor) && x.valor !== '' && x.valor != null ? +x.valor : null })),
     fornecedores: (Array.isArray(d.fornecedores) ? d.fornecedores : [])
       .filter(f => f && typeof f.nome === 'string' && f.nome.trim())
       .map(f => ({ servico: '', email: '', telefone: '', nif: '', iban: '', notas: '', ...f, id: f.id || novoId() })),
@@ -335,7 +343,7 @@ function preencherPeriodo() {
   $('#sel-mes').innerHTML = `<option value="0"${periodo.mes === 0 ? ' selected' : ''}>Ano inteiro</option>` +
     MESES_LONGOS.map((n, i) => `<option value="${i + 1}"${periodo.mes === i + 1 ? ' selected' : ''}>${n}</option>`).join('');
   // O separador Impostos é sempre anual.
-  const semPeriodo = ['trabalhos', 'clientes', 'fornecedores', 'fixas', 'personalizacao', 'definicoes'].includes(vista);
+  const semPeriodo = ['trabalhos', 'clientes', 'fornecedores', 'documentos', 'fixas', 'personalizacao', 'definicoes'].includes(vista);
   $('#sel-mes').hidden = semPeriodo || vista === 'impostos';
   $('#sel-ano').hidden = semPeriodo;
 }
@@ -349,7 +357,7 @@ function render() {
   $('#titulo').textContent = VISTAS[vista];
   preencherPeriodo();
   esconderTooltip();
-  ({ resumo: renderResumo, trabalhos: renderTrabalhos, clientes: renderClientes, fornecedores: renderFornecedores, movimentos: renderMovimentos, fixas: renderFixas, impostos: renderImpostos, personalizacao: renderPersonalizacao, definicoes: renderDefinicoes }[vista])();
+  ({ resumo: renderResumo, trabalhos: renderTrabalhos, clientes: renderClientes, fornecedores: renderFornecedores, movimentos: renderMovimentos, fixas: renderFixas, impostos: renderImpostos, documentos: renderDocumentos, personalizacao: renderPersonalizacao, definicoes: renderDefinicoes }[vista])();
 }
 
 // ---------- Resumo ----------
@@ -531,6 +539,7 @@ function tabelaMovimentos(lista, comAcoes) {
       <td class="num${v.liquido < 0 && !m.pendente ? ' negativo' : ''}">${v.liquido > 0 ? '+' : ''}${fmt(v.liquido)}</td>
       ${comAcoes ? `<td class="acoes-l">
         ${m.pendente ? `<button class="link" data-acao="pagar-mov" data-id="${m.id}">Marcar pago</button>` : ''}
+        ${botaoAnexos(m)}
         <button class="link" data-acao="editar" data-id="${m.id}">Editar</button>
         <button class="link" data-acao="duplicar" data-id="${m.id}">Duplicar</button>
         <button class="link perigo" data-acao="apagar" data-id="${m.id}">Apagar</button></td>` : ''}
@@ -1000,7 +1009,7 @@ formTrab.addEventListener('submit', e => {
   if (novo) aviso(`Novo cliente criado: ${c.nome}`);
 });
 
-const algumDialogoAberto = () => dlg.open || dlgFixa.open || dlgTrab.open || dlgCliente.open || dlgFornecedor.open;
+const algumDialogoAberto = () => dlg.open || dlgFixa.open || dlgTrab.open || dlgCliente.open || dlgFornecedor.open || dlgDoc.open;
 
 // ---------- Clientes (CRM) ----------
 
@@ -1378,6 +1387,294 @@ function exportarFornecedores() {
     return [f.nome, f.servico, f.email, f.telefone, f.nif, f.iban, String(r.pagamentos.length), r.pago, r.aPagar, r.ultimo ? dataPt(r.ultimo) : '', f.notas].map(celula).join(';');
   });
   descarregar(`fornecedores-${hoje()}.csv`, '﻿' + [cab.map(celula).join(';'), ...linhas].join('\r\n'), 'text/csv;charset=utf-8');
+}
+
+// ---------- Documentos ----------
+
+// Só existe na app de Mac: os ficheiros são guardados numa pasta pelo processo principal.
+const apiDocs = window.appMac?.docs || null;
+const filtrosD = { texto: '', tipo: '', ano: String(new Date().getFullYear()), movimentoId: null };
+let ficheirosExistentes = null; // Set com os nomes na pasta (null = ainda não lido)
+let pastaDocsAtual = '';
+const mensagemErro = err => String(err?.message || err).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
+
+const docsDoMovimento = m => estado.documentos.filter(x => x.movimentoId === m.id);
+
+// Tipo de documento que costuma acompanhar cada movimento, e vice-versa.
+function tipoDocPara(m) {
+  if (!m) return 'outro';
+  if (m.tipo === 'entrada') return 'recibo';
+  if (m.tipo === 'saida') return 'fatura';
+  return { IVA: 'iva', 'Segurança Social': 'ss', IRS: 'irs' }[m.categoria] || 'outro';
+}
+const servePara = (tipoDoc, m) => tipoDoc === 'outro' || tipoDocPara(m) === tipoDoc;
+
+// Adivinha o tipo pelo nome do ficheiro (ex.: "comprovativo IVA 3T.pdf").
+function tipoPeloNome(nome) {
+  const n = nome.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  if (/\biva\b/.test(n)) return 'iva';
+  if (/seguranca|\bss\b|\bdri\b|contribui/.test(n)) return 'ss';
+  if (/\birs\b|\bmodelo ?3\b/.test(n)) return 'irs';
+  if (/recibo|\bfr\b|fatura.?recibo/.test(n)) return 'recibo';
+  if (/fatura|factura|invoice/.test(n)) return 'fatura';
+  return 'outro';
+}
+
+function botaoAnexos(m) {
+  if (!apiDocs) return '';
+  const n = docsDoMovimento(m).length;
+  return n
+    ? `<button class="link clip" data-acao="ver-docs-mov" data-id="${m.id}" title="Ver documentos">📎 ${n}</button>`
+    : `<button class="link clip" data-acao="anexar-mov" data-id="${m.id}" title="Anexar documento (recibo, comprovativo, fatura)">📎</button>`;
+}
+
+function verDocsMovimento(m) {
+  const lista = docsDoMovimento(m);
+  if (lista.length === 1) { apiDocs.abrir(lista[0].ficheiro).catch(err => alert(mensagemErro(err))); return; }
+  filtrosD.movimentoId = m.id;
+  filtrosD.ano = '';
+  irPara('documentos');
+}
+
+async function atualizarExistentes() {
+  if (!apiDocs) return;
+  ficheirosExistentes = new Set(await apiDocs.existentes());
+  pastaDocsAtual = await apiDocs.pasta();
+}
+
+// Movimentos e entradas do ano sem documento, para lembrar o que falta guardar.
+function emFalta(ano) {
+  const doAno = estado.movimentos.filter(m => efetivo(m) && (!ano || m.data.startsWith(ano)) && !docsDoMovimento(m).length);
+  return {
+    impostos: ordenar(doAno.filter(m => m.tipo === 'imposto')),
+    recibos: ordenar(doAno.filter(m => m.tipo === 'entrada')),
+  };
+}
+
+function listaEmFalta(titulo, lista) {
+  if (!lista.length) return '';
+  const mostrar = lista.slice(0, 8);
+  return `<div><h3>${titulo} <span class="opc">(${lista.length})</span></h3><ul>${mostrar.map(m => `<li>
+    <span>${esc(m.descricao)}<small>${dataPt(m.data)} · ${esc(m.categoria)} · ${fmt(m.valor)}</small></span>
+    <button class="link" data-acao="anexar-mov" data-id="${m.id}">📎 Anexar</button></li>`).join('')}
+    ${lista.length > mostrar.length ? `<li><span class="opc">e mais ${lista.length - mostrar.length}…</span></li>` : ''}</ul></div>`;
+}
+
+function renderDocumentos() {
+  if (!apiDocs) {
+    $('#conteudo').innerHTML = `<section class="painel">${vazio('Os documentos só podem ser guardados na app Finanças instalada no Mac (os ficheiros ficam numa pasta do computador).')}</section>`;
+    return;
+  }
+  if (ficheirosExistentes === null) { atualizarExistentes().then(() => { if (vista === 'documentos') renderDocumentos(); }); }
+  const ano = filtrosD.ano;
+  const doAno = estado.documentos.filter(x => !ano || x.data.startsWith(ano));
+  const falta = emFalta(ano);
+  const anos = [...new Set([String(agora.getFullYear()), ...estado.documentos.map(x => x.data.slice(0, 4)), ...estado.movimentos.map(m => m.data.slice(0, 4))])].sort().reverse();
+  const movFiltro = filtrosD.movimentoId && estado.movimentos.find(m => m.id === filtrosD.movimentoId);
+
+  $('#conteudo').innerHTML = `
+    <section class="cartoes">
+      ${cartaoTexto('Documentos', doAno.length, ano ? `em ${ano}` : 'no total')}
+      ${cartaoTexto('Recibos emitidos', doAno.filter(x => x.tipo === 'recibo').length, falta.recibos.length ? `${plural(falta.recibos.length, 'entrada', 'entradas')} sem recibo` : 'todas as entradas têm recibo')}
+      ${cartaoTexto('Comprovativos de impostos', doAno.filter(x => ['iva', 'ss', 'irs'].includes(x.tipo)).length, 'IVA, Segurança Social e IRS')}
+      ${cartaoTexto('Em falta', falta.impostos.length + falta.recibos.length, falta.impostos.length ? `${plural(falta.impostos.length, 'imposto pago', 'impostos pagos')} sem comprovativo` : 'nenhum imposto sem comprovativo', 'destaque')}
+    </section>
+
+    <section class="painel">
+      <div id="zona-docs" class="zona-docs">
+        <b>Arrasta para aqui recibos, comprovativos ou faturas</b>
+        <span class="nota">PDF ou fotografia. Depois indicas o tipo e, se quiseres, o movimento a que diz respeito.</span>
+        <button class="primario" data-acao="adicionar-docs">Escolher ficheiros…</button>
+      </div>
+    </section>
+
+    ${falta.impostos.length || falta.recibos.length ? `<section class="painel">
+      <h2>Em falta ${ano ? `<small>${ano}</small>` : ''}</h2>
+      <div class="em-falta">${listaEmFalta('Impostos pagos sem comprovativo', falta.impostos)}${listaEmFalta('Entradas sem recibo', falta.recibos)}</div>
+    </section>` : ''}
+
+    <section class="painel">
+      <div class="painel-topo"><h2>Documentos</h2></div>
+      ${movFiltro ? `<div class="filtro-ativo">A mostrar os documentos de <b>${esc(movFiltro.descricao)}</b> (${dataPt(movFiltro.data)})
+        <button class="link" data-acao="anexar-mov" data-id="${movFiltro.id}">📎 Anexar outro</button>
+        <button class="link" data-acao="limpar-filtro-doc">Ver todos</button></div>` : ''}
+      <div class="filtros">
+        <input type="search" id="d-texto" placeholder="Procurar descrição, ficheiro ou notas…" value="${esc(filtrosD.texto)}">
+        <select id="d-ano" aria-label="Ano"><option value="">Todos os anos</option>${anos.map(a => `<option${a === ano ? ' selected' : ''}>${a}</option>`).join('')}</select>
+        <div class="chips">${[['', 'Todos'], ...Object.entries(TIPOS_DOC)].map(([k, n]) =>
+          `<button class="chip${filtrosD.tipo === k ? ' ativo' : ''}" data-filtro-d="${k}">${n} <span>${doAno.filter(x => !k || x.tipo === k).length}</span></button>`).join('')}</div>
+      </div>
+      <div id="lista-docs"></div>
+      <div class="pasta-docs">Os ficheiros estão em <code>${esc(pastaDocsAtual || '…')}</code>
+        <button class="link" data-acao="abrir-pasta-docs">Abrir pasta</button>
+        <button class="link" data-acao="mudar-pasta-docs">Mudar pasta (ex.: iCloud Drive)</button></div>
+    </section>`;
+
+  $('#d-texto').addEventListener('input', e => { filtrosD.texto = e.target.value; atualizarDocs(); });
+  $('#d-ano').addEventListener('change', e => { filtrosD.ano = e.target.value; renderDocumentos(); });
+  $$('[data-filtro-d]').forEach(b => b.addEventListener('click', () => { filtrosD.tipo = b.dataset.filtroD; renderDocumentos(); }));
+  ligarZonaDocs($('#zona-docs'));
+  atualizarDocs();
+}
+
+function atualizarDocs() {
+  const q = chaveNome(filtrosD.texto);
+  const lista = estado.documentos
+    .filter(x => (!filtrosD.ano || x.data.startsWith(filtrosD.ano)) && (!filtrosD.tipo || x.tipo === filtrosD.tipo))
+    .filter(x => !filtrosD.movimentoId || x.movimentoId === filtrosD.movimentoId)
+    .filter(x => !q || [x.descricao, x.nomeOriginal, x.ficheiro, x.notas].some(t => chaveNome(t).includes(q)))
+    .sort((a, b) => b.data.localeCompare(a.data) || (b.criado || 0) - (a.criado || 0));
+  if (!lista.length) {
+    $('#lista-docs').innerHTML = vazio(estado.documentos.length ? 'Nenhum documento com estes filtros.' : 'Ainda não guardaste documentos.');
+    return;
+  }
+  $('#lista-docs').innerHTML = `<div class="tabela-wrap"><table>
+    <thead><tr><th>Data</th><th>Tipo</th><th>Descrição</th><th>Associado a</th><th class="num">Valor</th><th></th></tr></thead>
+    <tbody>${lista.map(x => {
+      const m = x.movimentoId && estado.movimentos.find(y => y.id === x.movimentoId);
+      const falta = ficheirosExistentes && !ficheirosExistentes.has(x.ficheiro);
+      return `<tr>
+        <td>${dataPt(x.data)}</td>
+        <td>${TIPOS_DOC[x.tipo]}</td>
+        <td>${esc(x.descricao || x.nomeOriginal)}${falta ? ' <span class="etiqueta pendente" title="O ficheiro não está na pasta dos documentos">ficheiro em falta</span>' : ''}<small>${esc(x.nomeOriginal)}${x.notas ? ` · ${esc(x.notas)}` : ''}</small></td>
+        <td>${m ? `${esc(m.descricao)}<small>${dataPt(m.data)} · ${fmt(m.valor)}</small>` : '<span class="opc">—</span>'}</td>
+        <td class="num">${x.valor != null ? fmt(x.valor) : '—'}</td>
+        <td class="acoes-l">
+          <button class="link" data-acao="abrir-doc" data-doc="${x.id}"${falta ? ' disabled' : ''}>Abrir</button>
+          <button class="link" data-acao="mostrar-doc" data-doc="${x.id}"${falta ? ' disabled' : ''}>Finder</button>
+          <button class="link" data-acao="editar-doc" data-doc="${x.id}">Editar</button>
+          <button class="link perigo" data-acao="apagar-doc" data-doc="${x.id}">Apagar</button></td>
+      </tr>`;
+    }).join('')}</tbody></table></div>`;
+}
+
+function ligarZonaDocs(zona) {
+  ['dragenter', 'dragover'].forEach(t => zona.addEventListener(t, e => { e.preventDefault(); zona.classList.add('arrastar'); }));
+  ['dragleave', 'drop'].forEach(t => zona.addEventListener(t, () => zona.classList.remove('arrastar')));
+  zona.addEventListener('drop', e => {
+    e.preventDefault();
+    const caminhos = [...e.dataTransfer.files].map(f => apiDocs.caminhoDe(f)).filter(Boolean);
+    if (caminhos.length) anexar({ caminhos });
+  });
+}
+
+// ---------- Formulário de documento (um ficheiro de cada vez) ----------
+
+const dlgDoc = $('#dlg-documento');
+const formDoc = $('#form-documento');
+const campoD = n => formDoc.elements[n];
+let filaDocs = [];      // [{ origem, nome, tamanho }]
+let docAtual = null;    // { origem?, doc?, movimento? }
+
+async function anexar({ caminhos = null, movimento = null } = {}) {
+  if (!apiDocs) return;
+  const lista = caminhos || await apiDocs.escolher();
+  if (!lista.length) return;
+  filaDocs = [];
+  for (const origem of lista) {
+    try { filaDocs.push({ origem, ...(await apiDocs.info(origem)), movimento }); } catch (err) { alert(`${origem}: ${mensagemErro(err)}`); }
+  }
+  proximoDoc();
+}
+
+function proximoDoc() {
+  const item = filaDocs.shift();
+  if (item) abrirFormDoc(item);
+}
+
+function preencherMovimentosDoc(tipo, atual) {
+  const lista = ordenar(estado.movimentos.filter(m => m.id === atual || servePara(tipo, m))).slice(0, 300);
+  campoD('movimento').innerHTML = '<option value="">— nenhum —</option>' + lista.map(m =>
+    `<option value="${m.id}"${m.id === atual ? ' selected' : ''}>${dataPt(m.data)} · ${esc(m.descricao)} · ${fmt(m.valor)}</option>`).join('');
+}
+
+function abrirFormDoc({ origem = null, nome = '', tamanho = 0, doc = null, movimento = null }) {
+  formDoc.reset();
+  $('#doc-erro').hidden = true;
+  docAtual = { origem, nome, doc };
+  $('#doc-titulo').textContent = doc ? 'Editar documento' : 'Novo documento';
+  const ficheiro = doc ? doc.nomeOriginal : nome;
+  $('#doc-ficheiro').textContent = `📄 ${ficheiro}${tamanho ? ` · ${(tamanho / 1024 / 1024).toFixed(tamanho > 1048576 ? 1 : 2).replace('.', ',')} MB` : ''}`;
+  campoD('tipo').innerHTML = Object.entries(TIPOS_DOC).map(([k, n]) => `<option value="${k}">${n}</option>`).join('');
+  const tipo = doc ? doc.tipo : movimento ? tipoDocPara(movimento) : tipoPeloNome(nome);
+  campoD('tipo').value = tipo;
+  preencherMovimentosDoc(tipo, doc ? doc.movimentoId : movimento?.id);
+  campoD('data').value = doc ? doc.data : movimento ? movimento.data : hoje();
+  campoD('descricao').value = doc ? doc.descricao : movimento ? movimento.descricao : nome.replace(/\.[^.]+$/, '');
+  campoD('valor').value = doc ? (doc.valor ?? '') : movimento ? movimento.valor : '';
+  campoD('notas').value = doc ? doc.notas : '';
+  $('#doc-fila').textContent = filaDocs.length ? `Depois deste: ${plural(filaDocs.length, 'ficheiro', 'ficheiros')}.` : '';
+  dlgDoc.showModal();
+  campoD('descricao').focus();
+}
+
+// Ao mudar o tipo, a lista de movimentos passa a mostrar só os que fazem sentido.
+campoD('tipo').addEventListener('change', () => preencherMovimentosDoc(campoD('tipo').value, campoD('movimento').value));
+// Ao escolher um movimento, usa a data, a descrição e o valor dele se ainda estiverem por preencher.
+campoD('movimento').addEventListener('change', () => {
+  const m = estado.movimentos.find(x => x.id === campoD('movimento').value);
+  if (!m) return;
+  campoD('data').value = m.data;
+  if (!campoD('valor').value) campoD('valor').value = m.valor;
+  if (!campoD('descricao').value.trim() || docAtual.nome.startsWith(campoD('descricao').value)) campoD('descricao').value = m.descricao;
+});
+
+$('#doc-cancelar').addEventListener('click', () => { dlgDoc.close(); proximoDoc(); });
+
+formDoc.addEventListener('submit', async e => {
+  e.preventDefault();
+  const dados = {
+    tipo: campoD('tipo').value,
+    data: campoD('data').value,
+    descricao: campoD('descricao').value.trim(),
+    valor: campoD('valor').value === '' ? null : arred(Math.max(0, parseFloat(campoD('valor').value) || 0)),
+    movimentoId: campoD('movimento').value || null,
+    notas: campoD('notas').value.trim(),
+  };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dados.data)) { $('#doc-erro').textContent = 'Indica a data.'; $('#doc-erro').hidden = false; return; }
+  const botao = $('button[type=submit]', formDoc);
+  botao.disabled = true;
+  try {
+    if (docAtual.doc) {
+      Object.assign(docAtual.doc, dados);
+    } else {
+      // Nome legível na pasta: "2026-10-20 Comprovativo IVA - IVA 3.º trimestre.pdf"
+      const prefixo = `${dados.data} ${TIPOS_DOC[dados.tipo]}${dados.descricao ? ` - ${dados.descricao}` : ''}`;
+      const { ficheiro, tamanho } = await apiDocs.guardar({ origem: docAtual.origem, prefixo });
+      estado.documentos.push({ id: novoId(), criado: Date.now(), ficheiro, tamanho, nomeOriginal: docAtual.nome, ...dados });
+      ficheirosExistentes?.add(ficheiro);
+    }
+    guardar();
+    dlgDoc.close();
+    if (!filaDocs.length) { render(); aviso(docAtual.doc ? 'Documento atualizado.' : 'Documento guardado.'); }
+    proximoDoc();
+  } catch (err) {
+    $('#doc-erro').textContent = `Não foi possível guardar: ${mensagemErro(err)}`;
+    $('#doc-erro').hidden = false;
+  } finally {
+    botao.disabled = false;
+  }
+});
+
+async function apagarDoc(doc) {
+  if (!doc || !confirm(`Apagar “${doc.descricao || doc.nomeOriginal}”? O ficheiro também é apagado da pasta dos documentos.`)) return;
+  try { await apiDocs.apagar(doc.ficheiro); } catch {}
+  estado.documentos = estado.documentos.filter(x => x.id !== doc.id);
+  ficheirosExistentes?.delete(doc.ficheiro);
+  guardar();
+  render();
+}
+
+async function mudarPastaDocs() {
+  try {
+    const nova = await apiDocs.mudarPasta();
+    if (!nova) return;
+    await atualizarExistentes();
+    renderDocumentos();
+    aviso('Documentos movidos para a nova pasta.');
+  } catch (err) {
+    alert(mensagemErro(err));
+  }
 }
 
 // ---------- Personalização ----------
@@ -1772,6 +2069,7 @@ document.addEventListener('click', e => {
   const tr = b.dataset.trabalho && estado.trabalhos.find(x => x.id === b.dataset.trabalho);
   const cl = b.dataset.cliente && estado.clientes.find(x => x.id === b.dataset.cliente);
   const fo = b.dataset.fornecedor && estado.fornecedores.find(x => x.id === b.dataset.fornecedor);
+  const doc = b.dataset.doc && estado.documentos.find(x => x.id === b.dataset.doc);
   switch (b.dataset.acao) {
     case 'novo': abrirForm(); break;
     case 'editar': abrirForm(m); break;
@@ -1781,6 +2079,7 @@ document.addEventListener('click', e => {
         estado.movimentos = estado.movimentos.filter(x => x.id !== m.id);
         const t = m.trabalhoId && estado.trabalhos.find(x => x.id === m.trabalhoId);
         if (t) { t.pago = false; t.movimentoId = null; }
+        for (const doc of estado.documentos) if (doc.movimentoId === m.id) doc.movimentoId = null;
         guardar(); render();
       }
       break;
@@ -1798,6 +2097,16 @@ document.addEventListener('click', e => {
       if (m) { m.pendente = false; m.data = hoje(); guardar(); render(); aviso(`Pago: ${fmt(m.valor)}${fornecedorDe(m) ? ` a ${fornecedorDe(m).nome}` : ''}.`); }
       break;
     case 'exportar-fornecedores': exportarFornecedores(); break;
+    case 'anexar-mov': if (m) anexar({ movimento: m }); break;
+    case 'ver-docs-mov': if (m) verDocsMovimento(m); break;
+    case 'adicionar-docs': anexar(); break;
+    case 'abrir-doc': if (doc) apiDocs.abrir(doc.ficheiro).catch(err => alert(`Não foi possível abrir: ${mensagemErro(err)}`)); break;
+    case 'mostrar-doc': if (doc) apiDocs.mostrar(doc.ficheiro); break;
+    case 'editar-doc': if (doc) abrirFormDoc({ doc }); break;
+    case 'apagar-doc': apagarDoc(doc); break;
+    case 'limpar-filtro-doc': filtrosD.movimentoId = null; renderDocumentos(); break;
+    case 'abrir-pasta-docs': apiDocs.abrirPasta(); break;
+    case 'mudar-pasta-docs': mudarPastaDocs(); break;
     case 'editar-cliente': abrirFormCliente(cl); break;
     case 'apagar-cliente': apagarCliente(cl); break;
     case 'exportar-clientes': exportarClientes(); break;
@@ -1832,12 +2141,14 @@ document.addEventListener('click', e => {
     case 'importar-json': $('#ficheiro').click(); break;
     case 'exportar-csv': exportarCSV(); break;
     case 'apagar-tudo':
-      if (confirm('Apagar TODOS os movimentos, trabalhos, clientes, fornecedores e despesas fixas? Isto não pode ser desfeito. Exporta uma cópia antes, se quiseres.')) {
+      if (confirm('Apagar TODOS os movimentos, trabalhos, clientes, fornecedores, documentos e despesas fixas? Isto não pode ser desfeito. Exporta uma cópia antes, se quiseres.')) {
         estado.movimentos = [];
         estado.fixas = [];
         estado.trabalhos = [];
         estado.clientes = [];
         estado.fornecedores = [];
+        if (apiDocs) for (const doc of estado.documentos) apiDocs.apagar(doc.ficheiro).catch(() => {});
+        estado.documentos = [];
         guardar(); render();
       }
       break;
@@ -1854,6 +2165,10 @@ $('#sel-mes').addEventListener('change', e => { periodo.mes = +e.target.value; r
 document.addEventListener('keydown', e => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'n' && !algumDialogoAberto()) { e.preventDefault(); abrirForm(); }
 });
+
+// Largar um ficheiro fora de uma zona própria não deve abrir o ficheiro na janela.
+window.addEventListener('dragover', e => e.preventDefault());
+window.addEventListener('drop', e => e.preventDefault());
 
 // Lança as despesas fixas que chegaram ao dia, também com a app aberta durante dias.
 function verificarFixas() {

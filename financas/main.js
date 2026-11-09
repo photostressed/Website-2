@@ -69,6 +69,80 @@ ipcMain.handle('touchid:definir', async (_e, ativar) => {
   return { ok: true };
 });
 
+// ---------- Documentos (recibos, comprovativos) ----------
+
+// Os ficheiros são copiados para uma pasta própria (por omissão dentro dos dados da app;
+// pode ser mudada, por exemplo para o iCloud Drive). O caminho fica num ficheiro à parte.
+const ficheiroPastaDocs = () => path.join(app.getPath('userData'), 'pasta-documentos.txt');
+const pastaDocsPadrao = () => path.join(app.getPath('userData'), 'documentos');
+function pastaDocs() {
+  try { const p = fs.readFileSync(ficheiroPastaDocs(), 'utf8').trim(); if (p) return p; } catch {}
+  return pastaDocsPadrao();
+}
+// Só aceita nomes gerados pela app (sem barras), para nunca sair da pasta dos documentos.
+const NOME_VALIDO = /^[\w .-]+\.[a-z0-9]{1,5}$/i;
+function caminhoDoc(nome) {
+  if (!NOME_VALIDO.test(nome) || nome.includes('..')) throw new Error('Nome de ficheiro inválido.');
+  return path.join(pastaDocs(), nome);
+}
+const EXTENSOES = ['pdf', 'jpg', 'jpeg', 'png', 'heic', 'webp', 'gif', 'tif', 'tiff', 'doc', 'docx', 'xls', 'xlsx', 'csv', 'txt', 'xml', 'zip'];
+
+ipcMain.handle('docs:escolher', async () => {
+  const r = await dialog.showOpenDialog({
+    properties: ['openFile', 'multiSelections'],
+    filters: [{ name: 'Documentos', extensions: EXTENSOES }, { name: 'Todos os ficheiros', extensions: ['*'] }],
+  });
+  return r.canceled ? [] : r.filePaths;
+});
+
+ipcMain.handle('docs:info', (_e, origem) => {
+  const st = fs.statSync(origem);
+  if (!st.isFile()) throw new Error('Isto não é um ficheiro.');
+  return { nome: path.basename(origem), tamanho: st.size };
+});
+
+// Copia o ficheiro para a pasta dos documentos com um nome legível e único.
+ipcMain.handle('docs:guardar', (_e, { origem, prefixo }) => {
+  const pasta = pastaDocs();
+  fs.mkdirSync(pasta, { recursive: true });
+  const ext = (path.extname(origem).slice(1) || 'bin').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 5) || 'bin';
+  const base = String(prefixo || 'documento').replace(/º/g, 'o').replace(/ª/g, 'a').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\w .-]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) || 'documento';
+  let nome = `${base}.${ext}`;
+  for (let i = 2; fs.existsSync(path.join(pasta, nome)); i++) nome = `${base}-${i}.${ext}`;
+  fs.copyFileSync(origem, path.join(pasta, nome), fs.constants.COPYFILE_EXCL);
+  return { ficheiro: nome, tamanho: fs.statSync(path.join(pasta, nome)).size };
+});
+
+ipcMain.handle('docs:abrir', async (_e, nome) => {
+  const erro = await shell.openPath(caminhoDoc(nome));
+  if (erro) throw new Error(erro);
+});
+ipcMain.handle('docs:mostrar', (_e, nome) => shell.showItemInFolder(caminhoDoc(nome)));
+ipcMain.handle('docs:apagar', (_e, nome) => fs.rmSync(caminhoDoc(nome), { force: true }));
+ipcMain.handle('docs:existentes', () => { try { return fs.readdirSync(pastaDocs()); } catch { return []; } });
+ipcMain.handle('docs:pasta', () => pastaDocs());
+ipcMain.handle('docs:abrir-pasta', () => { fs.mkdirSync(pastaDocs(), { recursive: true }); return shell.openPath(pastaDocs()); });
+
+// Muda a pasta: copia os documentos que já existem e só depois apaga os originais.
+ipcMain.handle('docs:mudar-pasta', async () => {
+  const r = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'], message: 'Escolhe a pasta onde guardar os documentos (por exemplo, no iCloud Drive).' });
+  if (r.canceled || !r.filePaths[0]) return null;
+  const antiga = pastaDocs();
+  const nova = r.filePaths[0];
+  if (path.resolve(nova) === path.resolve(antiga)) return nova;
+  fs.mkdirSync(nova, { recursive: true });
+  let nomes = [];
+  try { nomes = fs.readdirSync(antiga).filter(n => NOME_VALIDO.test(n)); } catch {}
+  for (const n of nomes) {
+    if (fs.existsSync(path.join(nova, n))) throw new Error(`Já existe “${n}” na pasta escolhida. Escolhe uma pasta vazia.`);
+  }
+  for (const n of nomes) fs.copyFileSync(path.join(antiga, n), path.join(nova, n));
+  fs.writeFileSync(ficheiroPastaDocs(), nova);
+  for (const n of nomes) fs.rmSync(path.join(antiga, n), { force: true });
+  return nova;
+});
+
 // ---------- Janela ----------
 
 let aDesbloquear = false;
